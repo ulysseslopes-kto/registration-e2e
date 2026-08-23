@@ -1,0 +1,27 @@
+{
+  "status": 200,
+  "features": {
+    "fe_igp_registration_new_ui_experience": {
+      "defaultValue": true
+    },
+    "igp_registration_verification_phases": {
+      "defaultValue": {
+        "registration_phase": [
+          { "step": "email_verification", "visible": true }
+        ],
+        "activation_phase": []
+      }
+    },
+    "fe_igp_registration_post_password_step_order": {
+      "defaultValue": {
+        "post_password_phase": [
+          { "step": "email_verification", "visible": true },
+          { "step": "phone", "visible": true }
+        ]
+      }
+    },
+    "captcha_registration_solution": {
+      "defaultValue": "NONE"
+    }
+  }
+}

@@ -1,0 +1,9 @@
+node_modules
+.pnpm-store
+
+cypress/videos
+cypress/screenshots
+cypress/downloads
+
+*.tsbuildinfo
+.DS_Store

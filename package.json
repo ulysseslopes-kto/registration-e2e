@@ -1,0 +1,17 @@
+{
+  "name": "registration-e2e",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "precypress:open": "./scripts/check-env.sh",
+    "cypress:open": "cypress open",
+    "precypress:run": "./scripts/check-env.sh",
+    "cypress:run": "cypress run",
+    "pretest:e2e": "./scripts/check-env.sh",
+    "test:e2e": "cypress run"
+  },
+  "devDependencies": {
+    "cypress": "^13.17.0",
+    "typescript": "5.8.2"
+  }
+}
