@@ -152,8 +152,8 @@ in mono-fe; the test now asserts the legacy form never appears.
   (goadopt.io) itself writes once accepted (captured once in
   `fixtures/adopt-consent.json`), so specs don't depend on that third-party
   banner script loading and rendering before every test.
-- `cy.startRegistration()` — accept cookies → visit `/` → click the header's
-  register CTA (`[data-qa="registerBtn"]`).
+- `cy.startRegistration()` — accept cookies → visit `/registro/` directly
+  (skips the home page, so tests don't depend on its marketing banners).
 - `cy.stubCpfCheck()`, `stubEmailCheck()`, `stubSendToken()`,
   `stubValidateToken()`, `stubSocialSignIn()`, `stubMarkVerified()`,
   `stubRegister()`, `stubLogin()` — one intercept per backend endpoint the

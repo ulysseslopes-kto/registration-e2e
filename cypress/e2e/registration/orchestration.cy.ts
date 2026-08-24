@@ -151,7 +151,7 @@ describe('Account create — orchestration & feature flags', () => {
     cy.stubCpfCheck({ mobilePrefixAndNumberRequired: false })
     cy.stubRegister()
     cy.acceptCookieBanner()
-    cy.visit('/', {
+    cy.visit('/registro/', {
       onBeforeLoad(win) {
         // Fakes the Cloudflare Turnstile SDK: `render` schedules the
         // verified callback after a delay, mimicking the real widget
@@ -174,7 +174,6 @@ describe('Account create — orchestration & feature flags', () => {
         }
       },
     })
-    cy.get('[data-qa="registerBtn"]').click()
     cy.fillCpfStep()
     cy.wait('@cpfCheck')
     cy.fillPasswordStep()

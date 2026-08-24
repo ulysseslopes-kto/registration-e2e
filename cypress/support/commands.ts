@@ -6,11 +6,15 @@
  * is shallow-merged onto the base fixture's `features` map — each key replaces
  * that flag's whole `{ defaultValue }` entry, e.g.:
  * `cy.stubGrowthbookFeatures({ captcha_registration_solution: { defaultValue: 'TURNSTILE' } })`.
+ * Also stubs `GET /country/check` (see `stubCountryCheck`) — GrowthBookProvider's
+ * `load()` awaits both before `isGrowthBookReady` flips, so a test stubbing one
+ * without the other still depends on the real country-check endpoint.
  * Call before `cy.visit()` — GrowthBook fetches its features once on init.
  */
 Cypress.Commands.add(
   'stubGrowthbookFeatures',
   (featureOverrides: Record<string, unknown | null> = {}) => {
+    cy.stubCountryCheck()
     cy.fixture('registration/growthbook-features.json').then((base) => {
       const features: Record<string, unknown> = {
         ...base.features,
@@ -30,6 +34,19 @@ Cypress.Commands.add(
 )
 
 /**
+ * Stubs `GET /country/check` (packages/growthbook/src/GrowthBookProvider.tsx)
+ * with a fixed country, so `isGrowthBookReady` doesn't depend on the real
+ * backend responding. Normally called indirectly via `stubGrowthbookFeatures`;
+ * call directly only in a test that needs this endpoint covered without also
+ * stubbing GrowthBook features.
+ */
+Cypress.Commands.add('stubCountryCheck', (name = 'Brazil') => {
+  cy.intercept('GET', '**/country/check', { data: { name } }).as(
+    'countryCheck',
+  )
+})
+
+/**
  * Suppresses the AdOpt (goadopt.io) cookie-consent banner that apps/core
  * loads on every page — it covers the auth-shell content (e.g. the
  * verification method rows) until accepted. Rather than clicking through the
@@ -45,11 +62,15 @@ Cypress.Commands.add('acceptCookieBanner', () => {
   })
 })
 
-/** Suppress the cookie banner → home → click the header's register CTA. */
+/**
+ * Suppress the cookie banner → visit `/registro/` directly. Goes straight to
+ * the registration screen instead of the home page → register-CTA click, so
+ * tests don't depend on the home page's marketing banners (whose Gatsby
+ * `<Link>`s prefetch-`HEAD` their target pages when scrolled into view).
+ */
 Cypress.Commands.add('startRegistration', () => {
   cy.acceptCookieBanner()
-  cy.visit('/')
-  cy.get('[data-qa="registerBtn"]').click()
+  cy.visit('/registro/')
 })
 
 // --- Backend stubs (packages/core-api/src/adapters/auth.ts) ---
@@ -217,6 +238,8 @@ declare global {
       stubGrowthbookFeatures(
         featureOverrides?: Record<string, unknown | null>,
       ): Chainable<null>
+      /** See implementation doc above. */
+      stubCountryCheck(name?: string): Chainable<null>
       /** See implementation doc above. */
       acceptCookieBanner(): Chainable<JQuery<HTMLElement>>
       /** Home → accept cookies → click the header's register CTA. */

@@ -2,6 +2,8 @@
  * "Registration 2026" login landing (test matrix section 01, LOGIN-01..08).
  * LOGIN-05/06 (Google SSO) are skipped — `useGoogleLogin` opens a real
  * Google OAuth popup Cypress cannot drive; see apps/e2e/README.md.
+ * LOGIN-01 also runs once at a mobile viewport (`iphone-x`) to catch
+ * layout/interaction regressions specific to small screens.
  */
 describe('Login (auth-landing)', () => {
   beforeEach(() => {
@@ -9,6 +11,26 @@ describe('Login (auth-landing)', () => {
   })
 
   it('LOGIN-01: valid CPF reveals the password field and logs in', () => {
+    cy.stubGrowthbookFeatures()
+    cy.stubLogin()
+    cy.visit('/login/')
+
+    cy.get('input[autocomplete="current-password"]')
+      .closest('[aria-hidden]')
+      .should('have.attr', 'aria-hidden', 'true')
+    cy.get('input[autocomplete="username"]').type('52998224725')
+    cy.get('input[autocomplete="current-password"]')
+      .closest('[aria-hidden]')
+      .should('have.attr', 'aria-hidden', 'false')
+
+    cy.get('input[autocomplete="current-password"]').type('Sup3rSecret!23')
+    cy.get('button[type="submit"]').click()
+    cy.wait('@login')
+    cy.url().should('not.include', '/login')
+  })
+
+  it('LOGIN-01 (mobile): valid CPF reveals the password field and logs in on a mobile viewport (iPhone X)', () => {
+    cy.viewport('iphone-x')
     cy.stubGrowthbookFeatures()
     cy.stubLogin()
     cy.visit('/login/')
