@@ -85,19 +85,6 @@ pnpm cypress:run      # headless
 `baseUrl` in `cypress.config.ts` must match whatever port `apps/core` is
 actually running on locally.
 
-### Slow motion (watching a run)
-
-`cypress open` runs commands about as fast as the browser can, which is hard
-to follow visually. Set `CYPRESS_SLOWMO` (milliseconds) to pause after every
-`visit`/`click`/`type`/`clear`/`check`/`select`/`trigger`/`reload`:
-
-```bash
-CYPRESS_SLOWMO=800 pnpm cypress:open
-```
-
-Off by default (`0`) — no effect on normal or headless runs. See
-`cypress/support/e2e.ts`.
-
 ## Layout
 
 ```
@@ -107,6 +94,20 @@ cypress/
   fixtures/adopt-consent.json  # captured AdOpt cookie value (see below)
   support/                 # commands.ts, e2e.ts
 ```
+
+`cypress/support/e2e.ts` also has a global `beforeEach` that runs before
+every spec, stubbing:
+- `GET **/meta.json**` — apps/core's own new-deploy-check request, so no test
+  depends on that build artifact existing or matching.
+- Two third-party scripts loaded unconditionally on every page when `baseUrl`
+  points at a real deployed build (not `gatsby develop`): Smartico and Google
+  Identity Services (`accounts.google.com/gsi`). Neither is exercised by any
+  spec — see the comments in `e2e.ts` for why each is safe to block outright.
+  GTM and AdOpt (goadopt.io) are deliberately *not* blocked, even though
+  they're also unused: AdOpt loads inside the GTM container on a real build,
+  and it's AdOpt's own script that reads the `AdoptConsent` cookie
+  (`acceptCookieBanner()`) to suppress its banner — block either one and the
+  banner stays on screen, covering the page underneath it.
 
 Specs map to the "Matriz de Testes — Registro 2026" (KIB-8932) sections:
 
@@ -120,6 +121,7 @@ Specs map to the "Matriz de Testes — Registro 2026" (KIB-8932) sections:
 | `orchestration.cy.ts` | 06 Orchestration & flags | ORCH-01..04, 06..08 (05 skipped) |
 | `shell.cy.ts` | 07 Shared shell & UI | SHELL-01, 03, 05 (02/04 skipped) |
 | `account-create.cy.ts` | — | Standalone full-flow smoke test |
+| `mixpanel-tracking.cy.ts` | — | Mixpanel events fired along the flow (not in the original matrix) |
 
 **Skipped, and why** — each is called out in its spec file's header comment too:
 - **Google SSO** (LOGIN-05/06, EMAIL-09/10): `useGoogleLogin` opens a real

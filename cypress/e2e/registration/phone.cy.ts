@@ -35,6 +35,22 @@ describe('Account create — phone step', () => {
     cy.contains('Validando seus dados').should('be.visible')
   })
 
+  it('PHONE-05 (mobile): formats the number, enables "Próximo", and fires the final submit on a mobile viewport (iPhone X)', () => {
+    cy.viewport('iphone-x')
+    cy.stubGrowthbookFeatures(PHONE_ONLY_ORDER)
+    cy.stubCpfCheck({ mobilePrefixAndNumberRequired: true })
+    cy.stubRegister()
+    cy.startRegistration()
+    cy.fillCpfStep()
+    cy.wait('@cpfCheck')
+    cy.fillPasswordStep()
+    cy.get('input[inputmode="tel"]').type('11987654321')
+    cy.get('input[inputmode="tel"]').should('have.value', '(11) 98765-4321')
+    cy.get('.step-primary-button').click()
+    cy.contains('Validando seus dados').should('be.visible')
+    cy.wait('@register')
+  })
+
   describe('on the phone step', () => {
     beforeEach(() => {
       cy.stubGrowthbookFeatures(PHONE_ONLY_ORDER)

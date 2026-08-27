@@ -15,6 +15,14 @@ describe('Account create — CPF step', () => {
     cy.get('input[type="password"]').should('be.visible')
   })
 
+  it('CPF-01 (mobile): happy path — valid CPF + consents advances to the password step on a mobile viewport (iPhone X)', () => {
+    cy.viewport('iphone-x')
+    cy.stubCpfCheck()
+    cy.fillCpfStep()
+    cy.wait('@cpfCheck')
+    cy.get('input[type="password"]').should('be.visible')
+  })
+
   it('CPF-02: invalid check-digit message appears exactly at the 14-char mask, not before', () => {
     // 111.444.777-36 — 11 digits, wrong check digit (valid one is ...-35).
     cy.get('input[inputmode="numeric"]').type('1114447773')

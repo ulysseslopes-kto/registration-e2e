@@ -43,6 +43,18 @@ describe('Account create — e-mail verification step', () => {
     cy.contains('Aguarde 30s').should('be.visible')
   })
 
+  it('EMAIL-03 (mobile): sending the code advances to the OTP screen on a mobile viewport (iPhone X)', () => {
+    cy.viewport('iphone-x')
+    cy.stubEmailCheck()
+    cy.stubSendToken()
+    cy.selectEmailVerificationMethod()
+    cy.fillEmailStep()
+    cy.wait('@emailCheck')
+    cy.wait('@sendToken')
+    cy.get('input[data-input-otp="true"]').should('be.visible')
+    cy.contains('Aguarde 30s').should('be.visible')
+  })
+
   it('EMAIL-04: a 4-digit code submits automatically, no button needed', () => {
     cy.stubEmailCheck()
     cy.stubSendToken()

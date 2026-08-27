@@ -202,14 +202,28 @@ Cypress.Commands.add(
 Cypress.Commands.add(
   'fillCpfStep',
   (cpf = '52998224725', { acceptAll = true }: { acceptAll?: boolean } = {}) => {
-    cy.get('input[inputmode="numeric"]').type(cpf)
-    if (acceptAll) cy.get('input[type="checkbox"]').first().check({ force: true })
+    // Waits for the masked/controlled input to actually reflect what was
+    // typed before moving on — `type()` fires the keystrokes but doesn't
+    // wait for React to settle, so a slow re-render can otherwise leave the
+    // field looking empty by the time the checkbox/submit commands run.
+    cy.get('input[inputmode="numeric"]')
+      .type(cpf)
+      .should('not.have.value', '')
+    if (acceptAll) {
+      cy.get('input[type="checkbox"]').first().check({ force: true }).should('be.checked')
+    }
     cy.get('.step-primary-button').click()
   },
 )
 
+// `.should('have.value', ...)` after each `.type()` below waits for the
+// controlled input to actually catch up with what was typed before moving
+// on — otherwise a slow React re-render can leave the field holding only
+// the first few characters by the time the submit button is clicked (seen
+// first on the CPF field, see fillCpfStep above).
+
 Cypress.Commands.add('fillPasswordStep', (password = 'Sup3rSecret!23') => {
-  cy.get('input[type="password"]').type(password)
+  cy.get('input[type="password"]').type(password).should('have.value', password)
   cy.get('.step-primary-button').click()
 })
 
@@ -222,7 +236,7 @@ Cypress.Commands.add('selectGoogleVerificationMethod', () => {
 })
 
 Cypress.Commands.add('fillEmailStep', (email = 'e2e-test@example.com') => {
-  cy.get('input[type="email"]').type(email)
+  cy.get('input[type="email"]').type(email).should('have.value', email)
   cy.get('.step-primary-button').click()
 })
 
