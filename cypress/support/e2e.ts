@@ -38,4 +38,9 @@ beforeEach(() => {
   // (broke `account-create.cy.ts` this way once already).
   cy.intercept('GET', '**cdn-smr.kto.bet.br/**', { statusCode: 204, body: '' })
   cy.intercept('GET', '**accounts.google.com/gsi/**', { statusCode: 204, body: '' })
+
+  // Set the AdOpt "already-answered" cookie globally so the consent banner
+  // never renders, regardless of which spec/command visits a page — see
+  // `acceptCookieBanner()` in commands.ts. Must run before `cy.visit()`.
+  cy.acceptCookieBanner()
 })

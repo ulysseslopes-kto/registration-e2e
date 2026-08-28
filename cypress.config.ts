@@ -7,7 +7,7 @@ export default defineConfig({
     //https://pr-2050.d2xauiex3dlsqs.amplifyapp.com/
     //https://www.kto-dev.com/
     //http://localhost:8000/
-    baseUrl: 'https://pr-2050.d2xauiex3dlsqs.amplifyapp.com/',
+    baseUrl: 'https://www.kto-dev.com/',
     specPattern: 'cypress/e2e/**/*.cy.ts',
     supportFile: 'cypress/support/e2e.ts',
     setupNodeEvents(on) {

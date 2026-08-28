@@ -42,7 +42,6 @@ describe('Account create — shared shell & UI', () => {
     // `FlagLoadingScreen` guard login.js already had (LOGIN-07): a black
     // screen covers the page until `isGrowthBookReady`, so the legacy form
     // never has a chance to paint.
-    cy.acceptCookieBanner()
     cy.intercept('GET', '**/country/check', (req) => {
       req.continue((res) => {
         res.setDelay(2000)

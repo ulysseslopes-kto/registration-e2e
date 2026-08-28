@@ -78,8 +78,10 @@ cryptic Cypress error.
 pnpm --filter core dev            # http://localhost:8000 (or your configured port)
 
 # terminal 2 — Cypress, from this repo
-pnpm cypress:open     # interactive
-pnpm cypress:run      # headless
+pnpm cypress:open                # interactive
+pnpm cypress:run                 # headless, every spec
+pnpm cypress:run:registration    # headless, just the behavioral flow specs
+pnpm cypress:run:translations    # headless, just the copy/i18n checks
 ```
 
 `baseUrl` in `cypress.config.ts` must match whatever port `apps/core` is
@@ -90,6 +92,10 @@ actually running on locally.
 ```
 cypress/
   e2e/registration/        # spec files, one per area of the test matrix
+  e2e/translations/        # copy/i18n checks, isolated from the matrix specs
+                            # (see cypress:run:translations above) — CMS copy
+                            # changes independently of flow behavior, so it's
+                            # kept out of the specs it would otherwise flake
   fixtures/registration/   # stubbed GrowthBook features response
   fixtures/adopt-consent.json  # captured AdOpt cookie value (see below)
   support/                 # commands.ts, e2e.ts

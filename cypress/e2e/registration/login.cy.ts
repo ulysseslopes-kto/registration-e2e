@@ -6,10 +6,6 @@
  * layout/interaction regressions specific to small screens.
  */
 describe('Login (auth-landing)', () => {
-  beforeEach(() => {
-    cy.acceptCookieBanner()
-  })
-
   it('LOGIN-01: valid CPF reveals the password field and logs in', () => {
     cy.stubGrowthbookFeatures()
     cy.stubLogin()

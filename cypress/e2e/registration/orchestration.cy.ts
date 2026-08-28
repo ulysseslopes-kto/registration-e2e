@@ -150,7 +150,6 @@ describe('Account create — orchestration & feature flags', () => {
     })
     cy.stubCpfCheck({ mobilePrefixAndNumberRequired: false })
     cy.stubRegister()
-    cy.acceptCookieBanner()
     cy.visit('/registro/', {
       onBeforeLoad(win) {
         // Fakes the Cloudflare Turnstile SDK: `render` schedules the
