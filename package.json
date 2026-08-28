@@ -9,6 +9,7 @@
     "cypress:run": "cypress run",
     "cypress:run:registration": "cypress run --spec \"cypress/e2e/registration/**/*.cy.ts\"",
     "cypress:run:translations": "cypress run --spec \"cypress/e2e/translations/**/*.cy.ts\"",
+    "cypress:run:legacy": "cypress run --spec \"cypress/e2e/legacy/**/*.cy.ts\"",
     "pretest:e2e": "./scripts/check-env.sh",
     "test:e2e": "cypress run"
   },

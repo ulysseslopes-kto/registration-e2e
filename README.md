@@ -82,6 +82,7 @@ pnpm cypress:open                # interactive
 pnpm cypress:run                 # headless, every spec
 pnpm cypress:run:registration    # headless, just the behavioral flow specs
 pnpm cypress:run:translations    # headless, just the copy/i18n checks
+pnpm cypress:run:legacy          # headless, just the pre-KIB-8932 flow
 ```
 
 `baseUrl` in `cypress.config.ts` must match whatever port `apps/core` is
@@ -96,6 +97,9 @@ cypress/
                             # (see cypress:run:translations above) — CMS copy
                             # changes independently of flow behavior, so it's
                             # kept out of the specs it would otherwise flake
+  e2e/legacy/               # pre-KIB-8932 login/register flow (still live
+                            # whenever fe_igp_registration_new_ui_experience
+                            # is off), isolated from the new-flow matrix specs
   fixtures/registration/   # stubbed GrowthBook features response
   fixtures/adopt-consent.json  # captured AdOpt cookie value (see below)
   support/                 # commands.ts, e2e.ts
@@ -149,6 +153,55 @@ register form on every direct visit until GrowthBook resolved (no readiness
 guard, unlike `login.js`'s `FlagLoadingScreen` — see LOGIN-07). That's fixed
 in mono-fe; the test now asserts the legacy form never appears.
 
+## Legacy flow (`cypress/e2e/legacy/`)
+
+Covers the pre-KIB-8932 single-form login (`LoginContent`) and every step of
+the multi-step register (`RegisterContent`: `EmailAndPasswordStep` →
+`EmailVerificationStep` → `PhoneVerificationStep` → `CepAddressStep`) that
+`apps/core` renders whenever `fe_igp_registration_new_ui_experience` is
+off — a different component tree from the new flow, with different DOM
+selectors (`#input-new-username`, `#national_id`, `#otp-input`, `#cep`,
+`#nextBtn1`, ...). Most backend endpoints are shared with the new flow
+(`stubLogin`/`stubEmailCheck`/`stubSendToken`/`stubValidateToken`/
+`stubRegister` all work unmodified); three are legacy-only:
+`stubLegacyCpfCheck` (`/registration/cpf/check/v3`, not the new flow's
+`/cpf-checks/v4`), `stubLegacySmsSend`/`stubLegacySmsValidate` (phone
+verification has no new-flow equivalent at all — the new flow's phone step
+is a plain field, no OTP). The address step's CEP → street/state/city
+autofill is deliberately left un-stubbed and driven with a real, well-known
+CEP (Av. Paulista, São Paulo) — it and the state/city dropdowns it validates
+against both come from the same real backend, so a hand-rolled CEP response
+risks a name mismatch a real one can't.
+
+Two GrowthBook flags are forced on in the fixture purely to reach/exercise
+this flow correctly, independent of what this suite actually cares about
+testing:
+- `registration_new_flow` — see the known issue below.
+- `player_registration_national_id_check` — off by default, gates whether
+  `EmailAndPasswordStep` calls the CPF check at all; without it the CPF is
+  accepted at face value past client-side format validation, and
+  `stubLegacyCpfCheck`'s intercept never fires.
+
+The optional Google-sign-in `REGISTER_LOBBY` step (behind
+`fe_social_sign_in_enabled`) isn't covered — same scope call as the new
+flow's suite skipping Google SSO.
+
+**Known issue, not a test bug**: advancing past the CPF/e-mail/password step
+reproducibly crashes the app (`Cannot destructure property
+'showUspsBarMobile' of ... as it is undefined`) whenever the
+`registration_new_flow` GrowthBook flag is off/absent — this suite's actual
+fixture default. Traced to `getLastIndex()` in
+`apps/core/src/hooks/useRegistrationSteps.js` (~line 130):
+`REGISTRATION_STEPS.findIndex(step => !step.isOldFlow) - 1` evaluates to
+`0 - 1 = -1` (no step sets `isOldFlow`, so the first step always matches),
+and since `-1` isn't nullish the trailing `?? REGISTRATION_STEPS.length - 1`
+fallback never applies — `formStep` ends up `-1`, and
+`REGISTRATION_STEPS[-1]` is undefined. This suite forces
+`registration_new_flow: true` to route through the other (correct) branch
+of that same function and dodge the crash — see the comment in
+`cypress/e2e/legacy/register.cy.ts`. Worth a real bug report to whoever
+still owns this flow.
+
 ## Custom commands (`cypress/support/commands.ts`)
 
 - `cy.stubGrowthbookFeatures(overrides?)` — intercepts the GrowthBook
@@ -167,6 +220,12 @@ in mono-fe; the test now asserts the legacy form never appears.
   `stubRegister()`, `stubLogin()` — one intercept per backend endpoint the
   flow can call (mono-fe's `packages/core-api/src/adapters/auth.ts`), each
   taking overrides to simulate rejections/errors/messageCodes.
+- `cy.stubLegacyCpfCheck()` — the legacy register flow's CPF check
+  (`/registration/cpf/check/v3`), a different endpoint from `stubCpfCheck`'s
+  new-flow `/cpf-checks/v4`. Legacy-flow specs only.
+- `cy.stubLegacySmsSend()`, `stubLegacySmsValidate()` — the legacy register
+  flow's phone-verification step (send/validate SMS code) — no new-flow
+  equivalent exists. Legacy-flow specs only.
 - `cy.fillCpfStep()`, `fillPasswordStep()`, `selectEmailVerificationMethod()`,
   `selectGoogleVerificationMethod()`, `fillEmailStep()`, `fillOtp()` — fill
   and submit one step, assuming its network stub (if any) is already set up.

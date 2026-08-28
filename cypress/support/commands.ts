@@ -34,16 +34,30 @@ Cypress.Commands.add(
 )
 
 /**
- * Stubs `GET /country/check` (packages/growthbook/src/GrowthBookProvider.tsx)
- * with a fixed country, so `isGrowthBookReady` doesn't depend on the real
- * backend responding. Normally called indirectly via `stubGrowthbookFeatures`;
- * call directly only in a test that needs this endpoint covered without also
- * stubbing GrowthBook features.
+ * Stubs `GET /country/check` with a fixed, always-allowed country. Two
+ * unrelated consumers read this same response:
+ * - `packages/growthbook/src/GrowthBookProvider.tsx` — only needs it to
+ *   resolve so `isGrowthBookReady` flips (the new v4 flow's only dependency
+ *   on this endpoint).
+ * - `apps/core/src/context/authProvider.js`, via `mapCountryCheckToAuthDataCheck`
+ *   (`countryCheckMapper.js`) — derives `countryBlocked: !countryCheck.active`
+ *   from it. `SplitBannerLayout`/`SplitLayout` (the legacy login/register
+ *   pages' wrapper) redirect straight to `/blocked` when that's true, so
+ *   `active: true` (plus the two `*_blocked` flags) is required for legacy
+ *   specs even though the new flow never reads those fields.
+ * Normally called indirectly via `stubGrowthbookFeatures`; call directly only
+ * in a test that needs this endpoint covered without also stubbing GrowthBook
+ * features.
  */
 Cypress.Commands.add('stubCountryCheck', (name = 'Brazil') => {
-  cy.intercept('GET', '**/country/check', { data: { name } }).as(
-    'countryCheck',
-  )
+  cy.intercept('GET', '**/country/check', {
+    data: {
+      name,
+      active: true,
+      login_blocked: false,
+      registration_blocked: false,
+    },
+  }).as('countryCheck')
 })
 
 /**
@@ -105,6 +119,83 @@ Cypress.Commands.add(
   },
 )
 
+/**
+ * Legacy registration's CPF check (`useCAFPolling.checkCaf`,
+ * apps/core/src/atomic-components/organisms/registerContent/customComponents/hooks/useCAFPolling.js)
+ * — a *different* endpoint from the new v4 flow's `stubCpfCheck`
+ * (`/registration/cpf/check/v3`, not `/cpf-checks/v4`), with an unwrapped
+ * response body (no `{ data: ... }` nesting). Passing `status` simulates a
+ * rejection (`INVALID`/`NOT_PROCESSED`/`DUPLICATED`) by omitting `afId`,
+ * which is what actually triggers `showCpfError` in the app — the default
+ * (no `status`) returns a same-request approval (`afId` + `cpf` both
+ * present), so the flow never has to poll the GET status endpoint.
+ */
+Cypress.Commands.add(
+  'stubLegacyCpfCheck',
+  (
+    overrides: {
+      status?: 'INVALID' | 'NOT_PROCESSED' | 'DUPLICATED'
+      statusCode?: number
+    } = {},
+  ) => {
+    const { statusCode = 200, status } = overrides
+    const body = status
+      ? { status }
+      : {
+          afId: 'e2e-legacy-af-id',
+          cpf: '52998224725',
+          status: 'APPROVED',
+          onboardingId: 'e2e-legacy-onboarding-id',
+        }
+    cy.intercept('POST', '**/registration/cpf/check/v3', {
+      statusCode,
+      body,
+    }).as('legacyCpfCheck')
+  },
+)
+
+/**
+ * Legacy registration's phone-verification step (`PhoneVerificationStep`,
+ * `doRegistrationSmsSend`) — sends the SMS code. The component checks
+ * `data?.mobileVerificationStatus === 'REQUESTED'` in addition to `ok`, so
+ * both must be right for it to treat the send as successful.
+ */
+Cypress.Commands.add(
+  'stubLegacySmsSend',
+  (overrides: { statusCode?: number; messageCode?: number } = {}) => {
+    const { statusCode = 200, messageCode } = overrides
+    cy.intercept('POST', '**/registration/mobile-number/send-verification-sms', {
+      statusCode,
+      body: messageCode
+        ? { messageCode }
+        : { data: { mobileVerificationStatus: 'REQUESTED' } },
+    }).as('legacySmsSend')
+  },
+)
+
+/**
+ * Legacy registration's phone-verification step (`PhoneVerificationStep`,
+ * `doRegistrationSmsValidation`) — validates the entered SMS code. Same
+ * `data?.mobileVerificationStatus` check as `stubLegacySmsSend`, expecting
+ * `'VERIFIED'` instead of `'REQUESTED'`.
+ */
+Cypress.Commands.add(
+  'stubLegacySmsValidate',
+  (overrides: { statusCode?: number; messageCode?: number } = {}) => {
+    const { statusCode = 200, messageCode } = overrides
+    cy.intercept(
+      'POST',
+      '**/registration/mobile-number/check-verification-sms-code',
+      {
+        statusCode,
+        body: messageCode
+          ? { messageCode }
+          : { data: { mobileVerificationStatus: 'VERIFIED' } },
+      },
+    ).as('legacySmsValidate')
+  },
+)
+
 Cypress.Commands.add(
   'stubEmailCheck',
   (overrides: { valid?: boolean; status?: string } = {}) => {
@@ -161,8 +252,14 @@ Cypress.Commands.add(
 /**
  * Stubs `doLogin` plus every downstream call `AuthContext.loginUser` makes
  * on a successful login (apps/core/src/context/authProvider.js) — `GET
- * /user`, `GET /limit`, `POST /intercom/token` — so a full login round-trip
- * never depends on the real backend.
+ * /user`, `GET /limit`, `POST /intercom/token`, `GET
+ * /user-activity-fact/deposit-info` — so a full login round-trip never
+ * depends on the real backend. `wallet.active`/`hasFirstTimeDeposit` must
+ * both be present (even though only used to decide whether to trigger a
+ * geolocation prompt) — `loginUser` reads
+ * `depositResponse.data.hasFirstTimeDeposit || user.data.wallet.active`
+ * unconditionally right after login, so a response missing either throws an
+ * uncaught exception that fails the test even on an otherwise-successful login.
  */
 Cypress.Commands.add(
   'stubLogin',
@@ -171,16 +268,30 @@ Cypress.Commands.add(
       statusCode = 200,
       body = { access_token: 'e2e-token', refresh_token: 'e2e-refresh' },
     } = overrides
-    cy.intercept('POST', '**/auth/login', { statusCode, body: { data: body } }).as(
+    // `hasNestedData: true` (doLogin's default) only unwraps a *successful*
+    // response's `{ data: ... }` envelope — an error response is read
+    // straight off `error.response.data` with no unwrapping, so nesting it
+    // the same way would bury `messageCode` where `treatLoginErrors`
+    // (shared by both the legacy and the new-flow login) can't see it.
+    const responseBody = statusCode >= 200 && statusCode < 300 ? { data: body } : body
+    cy.intercept('POST', '**/auth/login', { statusCode, body: responseBody }).as(
       'login',
     )
     cy.intercept('GET', '**/user', {
-      data: { id: 'e2e-user', email: 'e2e-test@example.com', first_name: 'E2E' },
+      data: {
+        id: 'e2e-user',
+        email: 'e2e-test@example.com',
+        first_name: 'E2E',
+        wallet: { active: false },
+      },
     }).as('getUser')
     cy.intercept('GET', '**/limit', { data: [] }).as('getLimits')
     cy.intercept('POST', '**/intercom/token', { data: 'e2e-intercom-token' }).as(
       'intercomToken',
     )
+    cy.intercept('GET', '**/user-activity-fact/deposit-info', {
+      data: { hasFirstTimeDeposit: false },
+    }).as('depositInfo')
   },
 )
 
@@ -263,6 +374,21 @@ declare global {
         cpfCheckId?: string | null
         mobilePrefixAndNumberRequired?: boolean
         statusCode?: number
+      }): Chainable<null>
+      /** See implementation doc above. Legacy flow only. */
+      stubLegacyCpfCheck(overrides?: {
+        status?: 'INVALID' | 'NOT_PROCESSED' | 'DUPLICATED'
+        statusCode?: number
+      }): Chainable<null>
+      /** See implementation doc above. Legacy flow only. */
+      stubLegacySmsSend(overrides?: {
+        statusCode?: number
+        messageCode?: number
+      }): Chainable<null>
+      /** See implementation doc above. Legacy flow only. */
+      stubLegacySmsValidate(overrides?: {
+        statusCode?: number
+        messageCode?: number
       }): Chainable<null>
       stubEmailCheck(overrides?: {
         valid?: boolean
