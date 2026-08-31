@@ -4,6 +4,9 @@
  * `mobilePrefixAndNumberRequired`; the post-password order is overridden to
  * `[phone]` only so these tests don't also have to go through e-mail
  * verification (already covered in email-verification.cy.ts).
+ * Every test here runs at the suite's default viewport (iPhone X); PHONE-05
+ * also runs once at a desktop viewport, to catch layout/interaction
+ * regressions specific to larger screens.
  */
 describe('Account create — phone step', () => {
   const PHONE_ONLY_ORDER = {
@@ -35,8 +38,8 @@ describe('Account create — phone step', () => {
     cy.contains('Validando seus dados').should('be.visible')
   })
 
-  it('PHONE-05 (mobile): formats the number, enables "Próximo", and fires the final submit on a mobile viewport (iPhone X)', () => {
-    cy.viewport('iphone-x')
+  it('PHONE-05 (desktop): formats the number, enables "Próximo", and fires the final submit on a desktop viewport', () => {
+    cy.viewport(1000, 660)
     cy.stubGrowthbookFeatures(PHONE_ONLY_ORDER)
     cy.stubCpfCheck({ mobilePrefixAndNumberRequired: true })
     cy.stubRegister()

@@ -4,9 +4,9 @@
  * `registration/v4` submit. Every backend call the flow can make along this
  * path is intercepted (see cypress/support/commands.ts) so the test never
  * depends on a real backend or a real e-mail/CPF being valid server-side.
- * Run twice — once at the default desktop viewport, once at a mobile one
- * (`iphone-x`) — to catch layout/interaction regressions specific to small
- * screens along the same path.
+ * Run twice — once at the suite's default viewport (iPhone X — see
+ * cypress.config.ts), once at a desktop one — to catch layout/interaction
+ * regressions specific to larger screens along the same path.
  *
  * Requires apps/core's dev server running (`pnpm --filter core dev` — see
  * cypress.config.ts for the expected baseUrl).
@@ -48,8 +48,8 @@ describe('Account create — full flow (mocked backend)', () => {
     cy.contains('Criando sua conta').should('be.visible')
   })
 
-  it('creates an account end to end on a mobile viewport (iPhone X)', () => {
-    cy.viewport('iphone-x')
+  it('creates an account end to end on a desktop viewport', () => {
+    cy.viewport(1000, 660)
     cy.startRegistration()
 
     cy.fillCpfStep()

@@ -1,6 +1,9 @@
 /**
  * CPF step of the account-create flow (test matrix section 02, CPF-01..08).
  * Requires apps/core's dev server running — see cypress.config.ts.
+ * Every test here runs at the suite's default viewport (iPhone X); CPF-01
+ * also runs once at a desktop viewport, to catch layout/interaction
+ * regressions specific to larger screens.
  */
 describe('Account create — CPF step', () => {
   beforeEach(() => {
@@ -15,8 +18,8 @@ describe('Account create — CPF step', () => {
     cy.get('input[type="password"]').should('be.visible')
   })
 
-  it('CPF-01 (mobile): happy path — valid CPF + consents advances to the password step on a mobile viewport (iPhone X)', () => {
-    cy.viewport('iphone-x')
+  it('CPF-01 (desktop): happy path — valid CPF + consents advances to the password step on a desktop viewport', () => {
+    cy.viewport(1000, 660)
     cy.stubCpfCheck()
     cy.fillCpfStep()
     cy.wait('@cpfCheck')

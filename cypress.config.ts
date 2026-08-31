@@ -8,6 +8,12 @@ export default defineConfig({
     //https://www.kto-dev.com/
     //http://localhost:8000/
     baseUrl: 'https://www.kto-dev.com/',
+    // Mobile-first default: most users hit this flow on a phone, so every
+    // spec runs at iPhone X's dimensions unless it explicitly overrides with
+    // `cy.viewport(...)` — only a handful of tests do that, to also cover a
+    // desktop viewport for their flow.
+    viewportWidth: 375,
+    viewportHeight: 812,
     specPattern: 'cypress/e2e/**/*.cy.ts',
     supportFile: 'cypress/support/e2e.ts',
     setupNodeEvents(on) {

@@ -77,6 +77,25 @@ Cypress.Commands.add('acceptCookieBanner', () => {
 })
 
 /**
+ * Real-click fallback for when the AdOpt banner renders anyway despite the
+ * `AdoptConsent` cookie `acceptCookieBanner()` sets — seen intermittently
+ * (AdOpt revalidates consent against its own backend, and can apparently
+ * decide to re-show the banner even with a previously-accepted cookie in
+ * place). `#adopt-accept-all-button` is AdOpt's own stable id for "Aceitar".
+ * A no-op when the banner isn't present, so it's cheap to call defensively
+ * right before a click that could land on/near where the banner covers the
+ * page.
+ */
+Cypress.Commands.add('dismissCookieBannerIfVisible', () => {
+  cy.get('body').then(($body) => {
+    const $acceptButton = $body.find('#adopt-accept-all-button')
+    if ($acceptButton.length) {
+      cy.wrap($acceptButton).click({ force: true })
+    }
+  })
+})
+
+/**
  * Suppress the cookie banner → visit `/registro/` directly. Goes straight to
  * the registration screen instead of the home page → register-CTA click, so
  * tests don't depend on the home page's marketing banners (whose Gatsby
@@ -193,6 +212,54 @@ Cypress.Commands.add(
           : { data: { mobileVerificationStatus: 'VERIFIED' } },
       },
     ).as('legacySmsValidate')
+  },
+)
+
+/**
+ * Legacy login's pre-login migratable/self-exclusion check
+ * (`getUserMigratableStatus`, apps/core/src/utils/getUserMigratableStatus/index.js)
+ * — `POST /registration/user/is-migrateable`, awaited before `doLogin` ever
+ * runs. `hasNestedData: true` (the adapter's default), so the response is
+ * unwrapped at `data`; `migrateable` (not `isMigratable`) is the raw field
+ * name the backend uses, renamed by `getUserMigratableStatus` on the way out.
+ * `isMigratable` is checked *before* `isSelfExcluded` in `onSubmit`
+ * (login.js) — a migratable account opens the migration modal regardless of
+ * its self-exclusion status; `isSelfExcluded` only matters once
+ * `isMigratable` is false. `nationalId`/`phone`/`phonePrefix`/`state`/
+ * `city`/`address`/`hasBalance` are the migrated account's existing data,
+ * carried into the migration modal's prepopulated `userData`. A real
+ * response also includes `zipCode`, but `getUserMigratableStatus` doesn't
+ * read it — passing it here is realistic but inert.
+ * Defaults to the common case (not migratable, not excluded) so a plain
+ * login test doesn't have to think about this endpoint at all.
+ */
+Cypress.Commands.add(
+  'stubMigratableStatus',
+  (
+    overrides: {
+      migrateable?: boolean
+      hasBalance?: boolean
+      isSelfExcluded?: boolean | null
+      selfExclusionEndDate?: string | null
+      nationalId?: string | null
+      phone?: string | null
+      phonePrefix?: string | null
+      state?: string | null
+      city?: string | null
+      address?: string | null
+      zipCode?: string | null
+      statusCode?: number
+    } = {},
+  ) => {
+    const { statusCode = 200, migrateable = false, ...rest } = overrides
+    cy.intercept('POST', '**/registration/user/is-migrateable', {
+      statusCode,
+      body: {
+        message: null,
+        messageCode: null,
+        data: { migrateable, ...rest },
+      },
+    }).as('migratableStatus')
   },
 )
 
@@ -367,6 +434,8 @@ declare global {
       stubCountryCheck(name?: string): Chainable<null>
       /** See implementation doc above. */
       acceptCookieBanner(): Chainable<JQuery<HTMLElement>>
+      /** See implementation doc above. */
+      dismissCookieBannerIfVisible(): Chainable<JQuery<HTMLElement>>
       /** Home → accept cookies → click the header's register CTA. */
       startRegistration(): Chainable<JQuery<HTMLElement>>
       stubCpfCheck(overrides?: {
@@ -389,6 +458,21 @@ declare global {
       stubLegacySmsValidate(overrides?: {
         statusCode?: number
         messageCode?: number
+      }): Chainable<null>
+      /** See implementation doc above. Legacy flow only. */
+      stubMigratableStatus(overrides?: {
+        migrateable?: boolean
+        hasBalance?: boolean
+        isSelfExcluded?: boolean | null
+        selfExclusionEndDate?: string | null
+        nationalId?: string | null
+        phone?: string | null
+        phonePrefix?: string | null
+        state?: string | null
+        city?: string | null
+        address?: string | null
+        zipCode?: string | null
+        statusCode?: number
       }): Chainable<null>
       stubEmailCheck(overrides?: {
         valid?: boolean

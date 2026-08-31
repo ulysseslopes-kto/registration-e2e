@@ -88,6 +88,17 @@ pnpm cypress:run:legacy          # headless, just the pre-KIB-8932 flow
 `baseUrl` in `cypress.config.ts` must match whatever port `apps/core` is
 actually running on locally.
 
+### Default viewport is mobile (iPhone X)
+
+`viewportWidth`/`viewportHeight` in `cypress.config.ts` are set to iPhone
+X's dimensions (375×812) — most users hit this flow on a phone, so that's
+the default every spec runs at unless it calls `cy.viewport(...)` itself.
+A handful of tests (one per spec file, named `... (desktop)`) explicitly
+override to `cy.viewport(1000, 660)` — Cypress's own pre-4.x default — to
+also catch layout/interaction regressions on a larger screen along the same
+path. Don't add more of those without a reason; the point is that desktop
+coverage is the exception here, not the default.
+
 ## Layout
 
 ```
@@ -167,11 +178,35 @@ selectors (`#input-new-username`, `#national_id`, `#otp-input`, `#cep`,
 `stubLegacyCpfCheck` (`/registration/cpf/check/v3`, not the new flow's
 `/cpf-checks/v4`), `stubLegacySmsSend`/`stubLegacySmsValidate` (phone
 verification has no new-flow equivalent at all — the new flow's phone step
-is a plain field, no OTP). The address step's CEP → street/state/city
-autofill is deliberately left un-stubbed and driven with a real, well-known
-CEP (Av. Paulista, São Paulo) — it and the state/city dropdowns it validates
-against both come from the same real backend, so a hand-rolled CEP response
-risks a name mismatch a real one can't.
+is a plain field, no OTP), and `stubMigratableStatus`
+(`/registration/user/is-migrateable`, login's pre-login migratable/
+self-exclusion check — also has no new-flow equivalent yet, see below). The
+address step's CEP → street/state/city autofill is deliberately left
+un-stubbed and driven with a real, well-known CEP (Av. Paulista, São
+Paulo) — it and the state/city dropdowns it validates against both come
+from the same real backend, so a hand-rolled CEP response risks a name
+mismatch a real one can't.
+
+**Login's migratable/self-exclusion check**: every legacy login test stubs
+`stubMigratableStatus` — `onSubmit` awaits `getUserMigratableStatus`
+(`POST /registration/user/is-migrateable`) before ever calling `doLogin`, so
+an unstubbed real response (not migratable, not excluded, for these
+throwaway e2e credentials) is what quietly made the plain login tests work
+even before this stub existed. Three conditions are covered: self-excluded
+(blocked with a formatted end-date message, no login attempt), migratable
+with a weak password (password-hint error, no modal), and migratable with a
+valid password (opens the `#register-modal` migration modal — the same
+`RegisterContent`/`EmailAndPasswordStep` covered in
+`cypress/e2e/legacy/register.cy.ts`, this time with `flow:
+REGISTER_MODAL_FLOWS.LOGIN`, gated only by the three consent checkboxes).
+
+The new flow's equivalent (`AuthLandingRoute.js`) is mid-implementation on
+an **uncommitted local branch** as of writing and currently has a literal
+`const isSelfExcluded = true` left in behind a `TEMP-DEBUG(remove before
+commit)` comment — every login on that branch would hit the
+account-restriction message and never call `doLogin` at all. Not something
+this repo can test until that's fixed and actually deployed; flagged here so
+it isn't missed.
 
 Two GrowthBook flags are forced on in the fixture purely to reach/exercise
 this flow correctly, independent of what this suite actually cares about
@@ -213,6 +248,12 @@ still owns this flow.
   (goadopt.io) itself writes once accepted (captured once in
   `fixtures/adopt-consent.json`), so specs don't depend on that third-party
   banner script loading and rendering before every test.
+- `cy.dismissCookieBannerIfVisible()` — real-click fallback for when AdOpt
+  renders the banner anyway despite the cookie above (seen intermittently —
+  AdOpt appears to revalidate consent against its own backend). Clicks the
+  real "Aceitar" button (`#adopt-accept-all-button`) if present, a no-op
+  otherwise. Call defensively right before a click that could land on/near
+  where the banner covers the page.
 - `cy.startRegistration()` — accept cookies → visit `/registro/` directly
   (skips the home page, so tests don't depend on its marketing banners).
 - `cy.stubCpfCheck()`, `stubEmailCheck()`, `stubSendToken()`,
@@ -226,6 +267,11 @@ still owns this flow.
 - `cy.stubLegacySmsSend()`, `stubLegacySmsValidate()` — the legacy register
   flow's phone-verification step (send/validate SMS code) — no new-flow
   equivalent exists. Legacy-flow specs only.
+- `cy.stubMigratableStatus(overrides?)` — the legacy login flow's pre-login
+  migratable/self-exclusion check (`/registration/user/is-migrateable`).
+  Defaults to not-migratable/not-excluded; pass `{ migrateable: true }` or
+  `{ isSelfExcluded: true, selfExclusionEndDate }` to simulate either
+  condition. Legacy-flow specs only.
 - `cy.fillCpfStep()`, `fillPasswordStep()`, `selectEmailVerificationMethod()`,
   `selectGoogleVerificationMethod()`, `fillEmailStep()`, `fillOtp()` — fill
   and submit one step, assuming its network stub (if any) is already set up.

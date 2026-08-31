@@ -3,6 +3,9 @@
  * 03, EMAIL-01..10). EMAIL-09/10 (Google SSO within this step) are skipped —
  * Cypress cannot drive the real Google OAuth popup `useGoogleLogin` opens;
  * see apps/e2e/README.md.
+ * Every test here runs at the suite's default viewport (iPhone X); EMAIL-03
+ * also runs once at a desktop viewport, to catch layout/interaction
+ * regressions specific to larger screens.
  */
 describe('Account create — e-mail verification step', () => {
   beforeEach(() => {
@@ -43,8 +46,8 @@ describe('Account create — e-mail verification step', () => {
     cy.contains('Aguarde 30s').should('be.visible')
   })
 
-  it('EMAIL-03 (mobile): sending the code advances to the OTP screen on a mobile viewport (iPhone X)', () => {
-    cy.viewport('iphone-x')
+  it('EMAIL-03 (desktop): sending the code advances to the OTP screen on a desktop viewport', () => {
+    cy.viewport(1000, 660)
     cy.stubEmailCheck()
     cy.stubSendToken()
     cy.selectEmailVerificationMethod()
