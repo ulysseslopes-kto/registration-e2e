@@ -3,6 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
+    "typecheck": "tsc --noEmit",
     "precypress:open": "./scripts/check-env.sh",
     "cypress:open": "cypress open",
     "precypress:run": "./scripts/check-env.sh",
@@ -18,5 +19,6 @@
   "devDependencies": {
     "cypress": "^13.17.0",
     "typescript": "5.8.2"
-  }
+  },
+  "packageManager": "pnpm@10.15.0"
 }

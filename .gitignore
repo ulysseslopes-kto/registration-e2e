@@ -7,3 +7,10 @@ cypress/downloads
 
 *.tsbuildinfo
 .DS_Store
+
+# Secrets e dados de teste — nunca commitados (padrão das collections Bruno:
+# valor só via process.env, arquivo local ignorado, .env.example documenta as chaves).
+.env
+.env.*
+!.env.example
+cypress.env.json
