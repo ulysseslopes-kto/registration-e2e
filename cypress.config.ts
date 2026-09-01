@@ -96,7 +96,7 @@ function fail(message: string): never {
 function resolveMode(): Mode {
   const mode = process.env.CY_MODE ?? 'mocked'
   if (!(MODES as readonly string[]).includes(mode)) {
-    fail(`CY_MODE inválido: "${mode}". Use: ${MODES.join(' | ')}`)
+    fail(`invalid CY_MODE: "${mode}". Use: ${MODES.join(' | ')}`)
   }
   return mode as Mode
 }
@@ -116,21 +116,21 @@ function resolveTarget(): {
   const target = process.env.FE_TARGET
   if (!target) {
     fail(
-      `FE_TARGET não definido. Use: ${Object.keys(FE_TARGETS).join(' | ')} ` +
-        `(ex.: FE_TARGET=pr FE_PR=2170) — ou defina no .env, veja .env.example. ` +
-        `Sem default de propósito: "dev" exige VPN e, fora dela, responde 403 ` +
-        `em tudo, o que faz cada spec falhar no cy.visit() por um motivo que ` +
-        `nada tem a ver com ele.`,
+      `FE_TARGET is not set. Use: ${Object.keys(FE_TARGETS).join(' | ')} ` +
+        `(e.g. FE_TARGET=pr FE_PR=2170) — or set it in .env, see .env.example. ` +
+        `There is no default on purpose: "dev" requires VPN and answers 403 to ` +
+        `everything without it, which makes every spec fail on cy.visit() for a ` +
+        `reason that has nothing to do with the spec.`,
     )
   }
   const resolve = FE_TARGETS[target]
   if (!resolve) {
     fail(
-      `FE_TARGET inválido: "${target}". Use: ${Object.keys(FE_TARGETS).join(' | ')}`,
+      `invalid FE_TARGET: "${target}". Use: ${Object.keys(FE_TARGETS).join(' | ')}`,
     )
   }
   if (target === 'pr' && !process.env.FE_PR) {
-    fail('FE_TARGET=pr exige FE_PR=<número do PR do mono-fe>')
+    fail('FE_TARGET=pr requires FE_PR=<mono-fe PR number>')
   }
   const pr = process.env.FE_PR
   return {
@@ -150,13 +150,13 @@ function assertIntegratedEnv(env: Record<string, string>): void {
   const missing = required.filter((key) => !env[key])
   if (missing.length > 0) {
     fail(
-      `CY_MODE=integrated exige ${missing.join(', ')} no .env — veja .env.example`,
+      `CY_MODE=integrated requires ${missing.join(', ')} in .env — see .env.example`,
     )
   }
   if (!ALLOWED_INTERNAL_HOSTS.some((host) => env.internalApi?.startsWith(host))) {
     fail(
-      `internalApi "${env.internalApi}" não é um gateway de dev/stg — ` +
-        `suíte integrada bloqueada (permitidos: ${ALLOWED_INTERNAL_HOSTS.join(', ')})`,
+      `internalApi "${env.internalApi}" is not a dev/stg gateway — integrated ` +
+        `suite blocked (allowed: ${ALLOWED_INTERNAL_HOSTS.join(', ')})`,
     )
   }
 }
@@ -203,15 +203,15 @@ export default defineConfig({
       const secrets = config.env.testSupportKey ? 'set' : 'unset'
       const vpn =
         target.needsVpn || mode === 'integrated'
-          ? '  (exige VPN — fora dela o gateway responde 403)'
+          ? '  (requires VPN — without it the gateway answers 403)'
           : ''
       console.log(
         `\n▸ FE: ${target.label} -> ${target.baseUrl}${vpn}` +
-          `\n▸ modo: ${mode}` +
+          `\n▸ mode: ${mode}` +
           (mode === 'integrated'
-            ? `\n▸ BE: ${config.env.apiUrl} (UI) + ${config.env.internalApi} (test-support, exige VPN)` +
+            ? `\n▸ BE: ${config.env.apiUrl} (UI) + ${config.env.internalApi} (test-support, requires VPN)` +
               `\n▸ test-support key: ${secrets}`
-            : '\n▸ BE: interceptado (nenhuma chamada real de negócio)') +
+            : '\n▸ BE: intercepted (no real business call)') +
           '\n',
       )
 

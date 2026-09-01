@@ -75,9 +75,9 @@ Cypress.Commands.add(
           Cypress.log({
             name: 'recycle',
             message:
-              `FALHOU (${response.status}) — a identidade pode ter ficado suja ` +
-              `para o proximo run. Checar VPN, X-Test-Support-Key, e se a ` +
-              `camada test-support esta viva no ambiente.`,
+              `FAILED (${response.status}) — the identity may have been left ` +
+              `dirty for the next run. Check VPN, X-Test-Support-Key, and ` +
+              `whether the test-support layer is live on this environment.`,
           })
         } else if (
           expectClean &&
@@ -86,10 +86,10 @@ Cypress.Commands.add(
           Cypress.log({
             name: 'recycle',
             message:
-              `identidade estava SUJA no inicio do spec ` +
+              `identity was DIRTY on entering the spec ` +
               `(userRecycled=${report.userRecycled}, ` +
-              `preRegistrationDeleted=${report.preRegistrationDeleted}) — um ` +
-              `run anterior morreu antes do cleanup. Limpo, seguindo.`,
+              `preRegistrationDeleted=${report.preRegistrationDeleted}) — a ` +
+              `previous run died before cleaning up. Cleaned, carrying on.`,
           })
         }
 
@@ -233,8 +233,8 @@ Cypress.Commands.add(
         if (ok) return cy.wrap(null, { log: false })
         if (remaining <= 1) {
           throw new Error(
-            `[pollUntil] "${description}" nao aconteceu em ${attempts} ` +
-              `tentativas x ${waitMs}ms.`,
+            `[pollUntil] "${description}" did not happen within ${attempts} ` +
+              `attempts x ${waitMs}ms.`,
           )
         }
         return cy
