@@ -11,6 +11,7 @@ describe('Login (auth-landing)', () => {
     cy.stubGrowthbookFeatures()
     cy.stubLogin()
     cy.visit('/login/')
+    cy.dismissCookieBannerIfVisible()
 
     cy.get('input[autocomplete="current-password"]')
       .closest('[aria-hidden]')
@@ -21,6 +22,9 @@ describe('Login (auth-landing)', () => {
       .should('have.attr', 'aria-hidden', 'false')
 
     cy.get('input[autocomplete="current-password"]').type('Sup3rSecret!23')
+    // AdOpt can re-show the banner with a delay, after the initial
+    // post-visit check already ran clean — check again right before this
+    // click, which is exactly where it's been seen covering the button.
     cy.dismissCookieBannerIfVisible()
     cy.get('button[type="submit"]').click()
     cy.wait('@login')
@@ -32,6 +36,7 @@ describe('Login (auth-landing)', () => {
     cy.stubGrowthbookFeatures()
     cy.stubLogin()
     cy.visit('/login/')
+    cy.dismissCookieBannerIfVisible()
 
     cy.get('input[autocomplete="current-password"]')
       .closest('[aria-hidden]')
@@ -42,6 +47,9 @@ describe('Login (auth-landing)', () => {
       .should('have.attr', 'aria-hidden', 'false')
 
     cy.get('input[autocomplete="current-password"]').type('Sup3rSecret!23')
+    // AdOpt can re-show the banner with a delay, after the initial
+    // post-visit check already ran clean — check again right before this
+    // click, which is exactly where it's been seen covering the button.
     cy.dismissCookieBannerIfVisible()
     cy.get('button[type="submit"]').click()
     cy.wait('@login')
@@ -52,11 +60,15 @@ describe('Login (auth-landing)', () => {
     cy.stubGrowthbookFeatures()
     cy.stubLogin()
     cy.visit('/login/')
+    cy.dismissCookieBannerIfVisible()
 
     cy.get('input[autocomplete="username"]')
       .type('lucas@gmail.com')
       .should('have.value', 'lucas@gmail.com')
     cy.get('input[autocomplete="current-password"]').type('Sup3rSecret!23')
+    // AdOpt can re-show the banner with a delay, after the initial
+    // post-visit check already ran clean — check again right before this
+    // click, which is exactly where it's been seen covering the button.
     cy.dismissCookieBannerIfVisible()
     cy.get('button[type="submit"]').click()
     cy.wait('@login')
@@ -67,6 +79,7 @@ describe('Login (auth-landing)', () => {
     cy.stubGrowthbookFeatures()
     cy.intercept('POST', '**/auth/login').as('login')
     cy.visit('/login/')
+    cy.dismissCookieBannerIfVisible()
 
     // 111.444.777-36 — wrong check digit (valid one is ...-35).
     cy.get('input[autocomplete="username"]').type('11144477736')
@@ -80,6 +93,7 @@ describe('Login (auth-landing)', () => {
   it('LOGIN-04: the CPF-invalid message never shows for incomplete CPFs or e-mails', () => {
     cy.stubGrowthbookFeatures()
     cy.visit('/login/')
+    cy.dismissCookieBannerIfVisible()
 
     cy.get('input[autocomplete="username"]').type('111.444.777')
     cy.contains('CPF inválido').should('not.exist')
@@ -99,6 +113,7 @@ describe('Login (auth-landing)', () => {
       })
     }).as('countryCheckDelayed')
     cy.visit('/login/')
+    cy.dismissCookieBannerIfVisible()
 
     cy.get('input[autocomplete="username"]').should('not.exist')
 
@@ -112,8 +127,12 @@ describe('Login (auth-landing)', () => {
     cy.stubGrowthbookFeatures()
     cy.stubLogin()
     cy.visit('/login/')
+    cy.dismissCookieBannerIfVisible()
     cy.get('input[autocomplete="username"]').type('52998224725')
     cy.get('input[autocomplete="current-password"]').type('Sup3rSecret!23')
+    // AdOpt can re-show the banner with a delay, after the initial
+    // post-visit check already ran clean — check again right before this
+    // click, which is exactly where it's been seen covering the button.
     cy.dismissCookieBannerIfVisible()
     cy.get('button[type="submit"]').click()
     cy.wait('@login')
@@ -129,8 +148,12 @@ describe('Login (auth-landing)', () => {
     })
     cy.stubLogin()
     cy.visit('/login/')
+    cy.dismissCookieBannerIfVisible()
     cy.get('input[autocomplete="username"]').type('52998224725')
     cy.get('input[autocomplete="current-password"]').type('Sup3rSecret!23')
+    // AdOpt can re-show the banner with a delay, after the initial
+    // post-visit check already ran clean — check again right before this
+    // click, which is exactly where it's been seen covering the button.
     cy.dismissCookieBannerIfVisible()
     cy.get('button[type="submit"]').click()
     cy.wait('@login')

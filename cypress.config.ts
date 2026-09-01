@@ -7,7 +7,7 @@ export default defineConfig({
     //https://pr-2050.d2xauiex3dlsqs.amplifyapp.com/
     //https://www.kto-dev.com/
     //http://localhost:8000/
-    baseUrl: 'https://www.kto-dev.com/',
+    baseUrl: 'https://pr-2170.d2xauiex3dlsqs.amplifyapp.com/',
     // Mobile-first default: most users hit this flow on a phone, so every
     // spec runs at iPhone X's dimensions unless it explicitly overrides with
     // `cy.viewport(...)` — only a handful of tests do that, to also cover a

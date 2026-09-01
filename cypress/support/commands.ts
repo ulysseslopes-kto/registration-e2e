@@ -82,12 +82,18 @@ Cypress.Commands.add('acceptCookieBanner', () => {
  * (AdOpt revalidates consent against its own backend, and can apparently
  * decide to re-show the banner even with a previously-accepted cookie in
  * place). `#adopt-accept-all-button` is AdOpt's own stable id for "Aceitar".
- * A no-op when the banner isn't present, so it's cheap to call defensively
- * right before a click that could land on/near where the banner covers the
- * page.
+ * A no-op when the banner isn't present, so it's cheap to call defensively.
+ *
+ * Call it twice, not once: right after `cy.visit()` (so tests start with the
+ * banner already out of the way — `startRegistration()` does this
+ * automatically), *and* again right before any click on/near where the
+ * banner would cover the page. AdOpt can render with a delay after the
+ * page loads, so the post-visit check alone can still miss a banner that
+ * shows up later — right before the click is where it's actually been seen
+ * covering a submit button.
  */
 Cypress.Commands.add('dismissCookieBannerIfVisible', () => {
-  cy.get('body').then(($body) => {
+  return cy.get('body').then(($body) => {
     const $acceptButton = $body.find('#adopt-accept-all-button')
     if ($acceptButton.length) {
       cy.wrap($acceptButton).click({ force: true })
@@ -100,10 +106,14 @@ Cypress.Commands.add('dismissCookieBannerIfVisible', () => {
  * the registration screen instead of the home page → register-CTA click, so
  * tests don't depend on the home page's marketing banners (whose Gatsby
  * `<Link>`s prefetch-`HEAD` their target pages when scrolled into view).
+ * Also runs `dismissCookieBannerIfVisible()` right after the visit, so tests
+ * start with the banner already out of the way even on the occasions AdOpt
+ * renders it despite the cookie.
  */
 Cypress.Commands.add('startRegistration', () => {
   cy.acceptCookieBanner()
   cy.visit('/registro/')
+  cy.dismissCookieBannerIfVisible()
 })
 
 // --- Backend stubs (packages/core-api/src/adapters/auth.ts) ---
@@ -435,7 +445,7 @@ declare global {
       /** See implementation doc above. */
       acceptCookieBanner(): Chainable<JQuery<HTMLElement>>
       /** See implementation doc above. */
-      dismissCookieBannerIfVisible(): Chainable<JQuery<HTMLElement>>
+      dismissCookieBannerIfVisible(): Chainable<JQuery<HTMLBodyElement>>
       /** Home → accept cookies → click the header's register CTA. */
       startRegistration(): Chainable<JQuery<HTMLElement>>
       stubCpfCheck(overrides?: {

@@ -48,6 +48,7 @@ describe('Account create — shared shell & UI', () => {
       })
     }).as('countryCheckDelayed')
     cy.visit('/registro/')
+    cy.dismissCookieBannerIfVisible()
 
     cy.get('#register-form').should('not.exist')
     cy.get('input[inputmode="numeric"]').should('not.exist')

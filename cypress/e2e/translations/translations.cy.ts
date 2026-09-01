@@ -21,6 +21,7 @@ describe('Translations — Login landing (loginv4.*, login.reCaptchaShort)', () 
       is_recaptcha_enabled: { defaultValue: true },
     })
     cy.visit('/login/')
+    cy.dismissCookieBannerIfVisible()
 
     cy.contains('PODE APOSTAR!').should('be.visible')
 

@@ -80,9 +80,11 @@ pnpm --filter core dev            # http://localhost:8000 (or your configured po
 # terminal 2 — Cypress, from this repo
 pnpm cypress:open                # interactive
 pnpm cypress:run                 # headless, every spec
-pnpm cypress:run:registration    # headless, just the behavioral flow specs
-pnpm cypress:run:translations    # headless, just the copy/i18n checks
-pnpm cypress:run:legacy          # headless, just the pre-KIB-8932 flow
+pnpm cypress:run:registration                 # headless, just the behavioral flow specs
+pnpm cypress:run:registration:self-excluded   # headless, just the new flow's migratable/self-exclusion conditions
+pnpm cypress:run:translations                 # headless, just the copy/i18n checks
+pnpm cypress:run:legacy                       # headless, just the pre-KIB-8932 flow
+pnpm cypress:run:legacy:self-excluded         # headless, just the legacy flow's migratable/self-exclusion conditions
 ```
 
 `baseUrl` in `cypress.config.ts` must match whatever port `apps/core` is
@@ -134,7 +136,7 @@ Specs map to the "Matriz de Testes — Registro 2026" (KIB-8932) sections:
 
 | Spec | Matrix section | Cases |
 |---|---|---|
-| `login.cy.ts` | 01 Login | LOGIN-01..04, 07, 08 (05/06 skipped) |
+| `login/login.cy.ts` | 01 Login | LOGIN-01..04, 07, 08 (05/06 skipped) |
 | `cpf.cy.ts` | 02 CPF step | CPF-01..08 |
 | `email-verification.cy.ts` | 03 E-mail verification | EMAIL-01..08 (09/10 skipped) |
 | `password.cy.ts` | 04 Password step | PW-01..05 |
@@ -143,6 +145,7 @@ Specs map to the "Matriz de Testes — Registro 2026" (KIB-8932) sections:
 | `shell.cy.ts` | 07 Shared shell & UI | SHELL-01, 03, 05 (02/04 skipped) |
 | `account-create.cy.ts` | — | Standalone full-flow smoke test |
 | `mixpanel-tracking.cy.ts` | — | Mixpanel events fired along the flow (not in the original matrix) |
+| `login/self-excluded.cy.ts` | — | Migratable/self-exclusion conditions, isolated (not in the original matrix — see below) |
 
 **Skipped, and why** — each is called out in its spec file's header comment too:
 - **Google SSO** (LOGIN-05/06, EMAIL-09/10): `useGoogleLogin` opens a real
@@ -164,6 +167,25 @@ register form on every direct visit until GrowthBook resolved (no readiness
 guard, unlike `login.js`'s `FlagLoadingScreen` — see LOGIN-07). That's fixed
 in mono-fe; the test now asserts the legacy form never appears.
 
+### New login's migratable/self-exclusion check (`cypress/e2e/registration/login/self-excluded.cy.ts`)
+
+Kept in its own file inside `cypress/e2e/registration/login/`, alongside
+`login.cy.ts` (the LOGIN-01..08 matrix specs) but separate, so these
+conditions can run in isolation
+(`pnpm cypress:run:registration:self-excluded`). `AuthLandingRoute.js`'s
+`onLogin` awaits `getUserMigratableStatus`
+(`POST /registration/user/is-migrateable`, `cy.stubMigratableStatus`) before
+ever calling `doLogin`, same idea as the legacy flow's equivalent below —
+but the actual behavior differs: this flow has **no migration modal yet**
+(explicit TODO in `AuthLandingRoute.js`), so a migratable account just logs
+in normally regardless of its self-exclusion status (`getSelfExclusionMessage`,
+`modules/registration/src/features/auth-landing/self-exclusion.ts`, returns
+early on `isMigratable` before ever looking at `isSelfExcluded`). Only a
+genuinely self-excluded, non-migratable account is blocked — with the
+`AccountRestrictionModal` (`role="dialog"`, toggles an `opacity-0`/
+`opacity-100` class rather than `display: none`, so assert on that class,
+not bare `.should('be.visible')`).
+
 ## Legacy flow (`cypress/e2e/legacy/`)
 
 Covers the pre-KIB-8932 single-form login (`LoginContent`) and every step of
@@ -174,39 +196,39 @@ off — a different component tree from the new flow, with different DOM
 selectors (`#input-new-username`, `#national_id`, `#otp-input`, `#cep`,
 `#nextBtn1`, ...). Most backend endpoints are shared with the new flow
 (`stubLogin`/`stubEmailCheck`/`stubSendToken`/`stubValidateToken`/
-`stubRegister` all work unmodified); three are legacy-only:
-`stubLegacyCpfCheck` (`/registration/cpf/check/v3`, not the new flow's
-`/cpf-checks/v4`), `stubLegacySmsSend`/`stubLegacySmsValidate` (phone
-verification has no new-flow equivalent at all — the new flow's phone step
-is a plain field, no OTP), and `stubMigratableStatus`
-(`/registration/user/is-migrateable`, login's pre-login migratable/
-self-exclusion check — also has no new-flow equivalent yet, see below). The
-address step's CEP → street/state/city autofill is deliberately left
-un-stubbed and driven with a real, well-known CEP (Av. Paulista, São
-Paulo) — it and the state/city dropdowns it validates against both come
-from the same real backend, so a hand-rolled CEP response risks a name
-mismatch a real one can't.
+`stubRegister`/`stubMigratableStatus` all work unmodified); two are
+legacy-only: `stubLegacyCpfCheck` (`/registration/cpf/check/v3`, not the new
+flow's `/cpf-checks/v4`) and `stubLegacySmsSend`/`stubLegacySmsValidate`
+(phone verification has no new-flow equivalent at all — the new flow's
+phone step is a plain field, no OTP). The address step's CEP →
+street/state/city autofill is deliberately left un-stubbed and driven with
+a real, well-known CEP (Av. Paulista, São Paulo) — it and the state/city
+dropdowns it validates against both come from the same real backend, so a
+hand-rolled CEP response risks a name mismatch a real one can't.
 
-**Login's migratable/self-exclusion check**: every legacy login test stubs
-`stubMigratableStatus` — `onSubmit` awaits `getUserMigratableStatus`
-(`POST /registration/user/is-migrateable`) before ever calling `doLogin`, so
-an unstubbed real response (not migratable, not excluded, for these
-throwaway e2e credentials) is what quietly made the plain login tests work
-even before this stub existed. Three conditions are covered: self-excluded
-(blocked with a formatted end-date message, no login attempt), migratable
-with a weak password (password-hint error, no modal), and migratable with a
-valid password (opens the `#register-modal` migration modal — the same
-`RegisterContent`/`EmailAndPasswordStep` covered in
-`cypress/e2e/legacy/register.cy.ts`, this time with `flow:
-REGISTER_MODAL_FLOWS.LOGIN`, gated only by the three consent checkboxes).
+**Login's migratable/self-exclusion check** (`cypress/e2e/legacy/login/self-excluded.cy.ts`,
+`pnpm cypress:run:legacy:self-excluded`) — kept in its own file, alongside
+`login.cy.ts` (the plain-login behavior) but separate, so these conditions
+can be run in isolation: `onSubmit` awaits
+`getUserMigratableStatus` (`POST /registration/user/is-migrateable`) before
+ever calling `doLogin` — an unstubbed real response (not migratable, not
+excluded, for these throwaway e2e credentials) is what quietly makes the
+plain login tests work without stubbing this endpoint at all. Conditions
+covered here: self-excluded (blocked with a formatted end-date message, no
+login attempt), migratable with a weak password (password-hint error, no
+modal), migratable with a valid password (opens the `#register-modal`
+migration modal — the same `RegisterContent`/`EmailAndPasswordStep` covered
+in `cypress/e2e/legacy/register.cy.ts`, this time with `flow:
+REGISTER_MODAL_FLOWS.LOGIN`, gated only by the three consent checkboxes), a
+realistic full response (migratable, `isSelfExcluded`/`selfExclusionEndDate`
+present but `null`), and migratable+self-excluded together (pins down that
+`isMigratable` is checked first, so it still opens the migration modal
+rather than the self-exclusion message).
 
-The new flow's equivalent (`AuthLandingRoute.js`) is mid-implementation on
-an **uncommitted local branch** as of writing and currently has a literal
-`const isSelfExcluded = true` left in behind a `TEMP-DEBUG(remove before
-commit)` comment — every login on that branch would hit the
-account-restriction message and never call `doLogin` at all. Not something
-this repo can test until that's fixed and actually deployed; flagged here so
-it isn't missed.
+The new flow's equivalent is covered separately in
+`cypress/e2e/registration/login/self-excluded.cy.ts` (see above) — its
+behavior genuinely differs (no migration modal yet), not just its file
+location.
 
 Two GrowthBook flags are forced on in the fixture purely to reach/exercise
 this flow correctly, independent of what this suite actually cares about
@@ -250,12 +272,19 @@ still owns this flow.
   banner script loading and rendering before every test.
 - `cy.dismissCookieBannerIfVisible()` — real-click fallback for when AdOpt
   renders the banner anyway despite the cookie above (seen intermittently —
-  AdOpt appears to revalidate consent against its own backend). Clicks the
-  real "Aceitar" button (`#adopt-accept-all-button`) if present, a no-op
-  otherwise. Call defensively right before a click that could land on/near
-  where the banner covers the page.
+  AdOpt appears to revalidate consent against its own backend, and can
+  re-show the banner more than once in the same test). Clicks the real
+  "Aceitar" button (`#adopt-accept-all-button`) if present, a no-op
+  otherwise. Cheap enough to call at every point the banner has actually
+  been seen covering something: right after `cy.visit()` (`startRegistration()`
+  does this automatically), right before a click near where it could cover
+  the page, and again after a response that re-renders the page (e.g. right
+  after `cy.wait()`-ing on a network stub) — see
+  `cypress/e2e/registration/login/self-excluded.cy.ts` for a spec that needs
+  all three.
 - `cy.startRegistration()` — accept cookies → visit `/registro/` directly
-  (skips the home page, so tests don't depend on its marketing banners).
+  (skips the home page, so tests don't depend on its marketing banners) →
+  `dismissCookieBannerIfVisible()`.
 - `cy.stubCpfCheck()`, `stubEmailCheck()`, `stubSendToken()`,
   `stubValidateToken()`, `stubSocialSignIn()`, `stubMarkVerified()`,
   `stubRegister()`, `stubLogin()` — one intercept per backend endpoint the

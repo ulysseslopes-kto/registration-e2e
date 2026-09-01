@@ -1,82 +1,25 @@
 /**
- * Legacy login (`LoginContent` inside apps/core/src/templates/onBoarding/login.js) —
- * the pre-KIB-8932 single-form login, still rendered whenever
- * `fe_igp_registration_new_ui_experience` is off. Not part of the "Registro
- * 2026" test matrix (that's what the specs under cypress/e2e/registration/
- * cover) — this is a separate, isolated suite for the flow it replaced,
- * kept around for as long as that flag can still be off in production.
+ * Legacy login's pre-login migratable/self-exclusion check
+ * (`getUserMigratableStatus`, apps/core/src/utils/getUserMigratableStatus/index.js) —
+ * `onSubmit` (apps/core/src/templates/onBoarding/login.js) awaits
+ * `POST /registration/user/is-migrateable` before ever calling `doLogin`.
+ * Split into its own file (separate from `cypress/e2e/legacy/login/login.cy.ts`,
+ * which covers the plain login behavior) so these conditions can be run in
+ * isolation: `pnpm cypress:run:legacy:self-excluded`, or point Cypress at
+ * this file directly.
  *
- * Selectors here (`#input-new-username`, `#input-new-password`, `#new-login`,
- * ...) are unrelated to the new flow's (`input[autocomplete="username"]`,
- * `.step-primary-button`, ...) — the two flows share the same backend
- * endpoints (`/auth/login`) but are otherwise separate components.
+ * `isMigratable` is checked *before* `isSelfExcluded` in `onSubmit` — a
+ * migratable account opens the migration modal regardless of its
+ * self-exclusion status; `isSelfExcluded` only matters once `isMigratable`
+ * is false. The last two tests below pin that precedence down explicitly.
  *
- * Every test below stubs `/registration/user/is-migrateable`
- * (`cy.stubMigratableStatus`) — `onSubmit` awaits it before ever calling
- * `doLogin`, so an unstubbed real backend response (not migratable, not
- * excluded, for these throwaway e2e credentials) is what makes the plain
- * login tests above work without even knowing this endpoint exists. The new
- * flow (`AuthLandingRoute.js`) has the same idea in progress on a separate,
- * uncommitted branch, but currently ships with a literal
- * `const isSelfExcluded = true` left in — worth flagging to whoever owns
- * that work, not something this repo can test until it's fixed and deployed.
+ * The new flow (`AuthLandingRoute.js`) has the same idea, with different
+ * behavior — see `cypress/e2e/registration/login/self-excluded.cy.ts`.
  */
-describe('Legacy login', () => {
+describe('Legacy login — migratable/self-exclusion conditions', () => {
   const LEGACY_FLOW = {
     fe_igp_registration_new_ui_experience: { defaultValue: false },
   }
-
-  it('renders the legacy form (not the new auth-landing) when the flag is off', () => {
-    cy.stubGrowthbookFeatures(LEGACY_FLOW)
-    cy.acceptCookieBanner()
-    cy.visit('/login/')
-
-    cy.get('#input-new-username').should('be.visible')
-    cy.get('#input-new-password').should('be.visible')
-    cy.get('#new-login').should('be.visible')
-    // Confirms this really is the legacy component, not the new one.
-    cy.get('input[autocomplete="username"]').should('not.exist')
-  })
-
-  it('valid credentials log in and redirect away from /login', () => {
-    cy.stubGrowthbookFeatures(LEGACY_FLOW)
-    cy.stubLogin()
-    cy.acceptCookieBanner()
-    cy.visit('/login/')
-
-    cy.get('#input-new-username').type('e2e-test@example.com')
-    cy.get('#input-new-password').type('Sup3rSecret!23')
-    cy.get('#new-login').click()
-    cy.wait('@login')
-    cy.url().should('not.include', '/login')
-  })
-
-  it('a login failure shows the generic error message, no redirect', () => {
-    cy.stubGrowthbookFeatures(LEGACY_FLOW)
-    // messageCode 174 → "login failed, check your username/password"
-    // (treatLogginErrors.js) — any code absent from that switch falls back
-    // to the raw `error.message`, which is empty for a hand-rolled stub body
-    // and renders a blank, zero-height `#errorMessage`.
-    cy.stubLogin({ statusCode: 401, body: { messageCode: 174 } })
-    cy.acceptCookieBanner()
-    cy.visit('/login/')
-
-    cy.get('#input-new-username').type('e2e-test@example.com')
-    cy.get('#input-new-password').type('Sup3rSecret!23')
-    cy.get('#new-login').click()
-    cy.wait('@login')
-    cy.get('#errorMessage').should('be.visible')
-    cy.url().should('include', '/login')
-  })
-
-  it('"Registre-se agora" (#joinNow) navigates to the registration page', () => {
-    cy.stubGrowthbookFeatures(LEGACY_FLOW)
-    cy.acceptCookieBanner()
-    cy.visit('/login/')
-
-    cy.get('#joinNow').click()
-    cy.url().should('include', '/registro')
-  })
 
   it('a self-excluded account is blocked with the formatted end-date message, no login attempt', () => {
     cy.stubGrowthbookFeatures(LEGACY_FLOW)
@@ -88,9 +31,11 @@ describe('Legacy login', () => {
     })
     cy.acceptCookieBanner()
     cy.visit('/login/')
+    cy.dismissCookieBannerIfVisible()
 
     cy.get('#input-new-username').type('e2e-test@example.com')
     cy.get('#input-new-password').type('Sup3rSecret!23')
+    cy.dismissCookieBannerIfVisible()
     cy.get('#new-login').click()
     cy.wait('@migratableStatus')
     cy.contains(
@@ -105,12 +50,14 @@ describe('Legacy login', () => {
     cy.stubMigratableStatus({ migrateable: true })
     cy.acceptCookieBanner()
     cy.visit('/login/')
+    cy.dismissCookieBannerIfVisible()
 
     cy.get('#input-new-username').type('e2e-test@example.com')
     // Missing an uppercase letter and a special character — fails
     // `passwordRegex`, the same client-side gate the migration modal's own
     // password field would otherwise enforce.
     cy.get('#input-new-password').type('weakpass123')
+    cy.dismissCookieBannerIfVisible()
     cy.get('#new-login').click()
     cy.wait('@migratableStatus')
     cy.contains(
@@ -126,9 +73,11 @@ describe('Legacy login', () => {
     cy.stubMigratableStatus({ migrateable: true })
     cy.acceptCookieBanner()
     cy.visit('/login/')
+    cy.dismissCookieBannerIfVisible()
 
     cy.get('#input-new-username').type('e2e-test@example.com')
     cy.get('#input-new-password').type('Sup3rSecret!23')
+    cy.dismissCookieBannerIfVisible()
     cy.get('#new-login').click()
     cy.wait('@migratableStatus')
 
@@ -172,9 +121,11 @@ describe('Legacy login', () => {
     })
     cy.acceptCookieBanner()
     cy.visit('/login/')
+    cy.dismissCookieBannerIfVisible()
 
     cy.get('#input-new-username').type('e2e-test@example.com')
     cy.get('#input-new-password').type('Sup3rSecret!23')
+    cy.dismissCookieBannerIfVisible()
     cy.get('#new-login').click()
     cy.wait('@migratableStatus')
 
@@ -190,9 +141,6 @@ describe('Legacy login', () => {
   })
 
   it('a migratable AND self-excluded account still opens the migration modal, not the self-exclusion message', () => {
-    // isMigratable is checked before isSelfExcluded in onSubmit (login.js) —
-    // this pins that precedence down explicitly, in case that ordering ever
-    // gets reshuffled.
     cy.stubGrowthbookFeatures(LEGACY_FLOW)
     cy.intercept('POST', '**/auth/login').as('login')
     cy.stubMigratableStatus({
@@ -202,9 +150,11 @@ describe('Legacy login', () => {
     })
     cy.acceptCookieBanner()
     cy.visit('/login/')
+    cy.dismissCookieBannerIfVisible()
 
     cy.get('#input-new-username').type('e2e-test@example.com')
     cy.get('#input-new-password').type('Sup3rSecret!23')
+    cy.dismissCookieBannerIfVisible()
     cy.get('#new-login').click()
     cy.wait('@migratableStatus')
 

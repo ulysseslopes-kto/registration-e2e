@@ -173,6 +173,7 @@ describe('Account create — orchestration & feature flags', () => {
         }
       },
     })
+    cy.dismissCookieBannerIfVisible()
     cy.fillCpfStep()
     cy.wait('@cpfCheck')
     cy.fillPasswordStep()
