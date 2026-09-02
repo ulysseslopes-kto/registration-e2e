@@ -4,7 +4,7 @@
  * flow with `verifiedEmail` set requires either a real Google OAuth exchange
  * or React Router history *state* set by `navigate(path, { state })`, neither
  * of which Cypress can reproduce via a plain `cy.visit()`; see
- * apps/e2e/README.md.
+ * README.md.
  */
 describe('Account create — orchestration & feature flags', () => {
   it('ORCH-01: default order (flag absent) is e-mail verification, then phone', () => {
@@ -51,6 +51,13 @@ describe('Account create — orchestration & feature flags', () => {
       },
     })
     cy.stubCpfCheck({ mobilePrefixAndNumberRequired: false })
+    // Password being the last step means its "Próximo" fires the final
+    // registration/v4 submit — stub it, or the request goes to the real
+    // backend and the "Validando seus dados" screen this asserts on is gone
+    // before it can be seen (an unreachable backend answers far faster than a
+    // real registration). PHONE-01b asserts the same string and already stubs
+    // it; this was the only test reaching the final submit unstubbed.
+    cy.stubRegister()
     cy.startRegistration()
     cy.fillCpfStep()
     cy.wait('@cpfCheck')

@@ -1,4 +1,9 @@
 import './commands'
+// Backend setup/teardown commands. Loaded in both modes (declaring a command
+// costs nothing until it is called); every one of them reads its host and key
+// from `Cypress.env`, and an integrated run without those is refused at config
+// time — see cypress.config.ts.
+import './commands/api'
 
 /**
  * apps/core's gatsby-browser.js polls `meta.json` (a static file written at

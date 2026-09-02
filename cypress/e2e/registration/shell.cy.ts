@@ -3,7 +3,7 @@
  * and SHELL-04 (CMS marketing-banner variants) are skipped — `useBanners`
  * resolves via Gatsby's build-time GraphQL static query, not a runtime
  * fetch, so there's no request to intercept from the browser; see
- * apps/e2e/README.md.
+ * README.md.
  */
 describe('Account create — shared shell & UI', () => {
   it('SHELL-01: the back button returns to the previous step', () => {

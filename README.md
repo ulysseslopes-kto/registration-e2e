@@ -12,9 +12,23 @@ mono-fe running its `core` app locally to actually run these specs against.
 ## Setup
 
 ```bash
+corepack enable             # uses the pnpm version pinned in package.json
 pnpm install
 pnpm exec cypress install   # downloads the Cypress binary
+cp .env.example .env        # .env is gitignored — never commit it
 ```
+
+`packageManager` in `package.json` pins pnpm, so `corepack` gives everyone the
+same version. It matters here: the lockfile is v9 (pnpm 9/10) and installing
+with pnpm 8 silently **rewrites it to v6**, producing a ~1500-line diff that
+has nothing to do with your change. Also, pnpm 8 rejects this repo's
+`pnpm-workspace.yaml` outright (`ERR_PNPM_INVALID_WORKSPACE_CONFIGURATION —
+packages field missing or empty`), because the file exists to carry
+`onlyBuiltDependencies` — a pnpm 10 setting — not to declare a workspace.
+
+`.env` holds the run's target and, for the integrated suite, its secrets. Only
+`.env.example` is committed; the real file is gitignored, same convention as
+the Bruno collections in `player-service/http/bruno-flows`.
 
 ### Corporate network gotchas
 
@@ -74,21 +88,71 @@ cryptic Cypress error.
 ## Running
 
 ```bash
-# terminal 1 — the app under test, from your mono-fe checkout
-pnpm --filter core dev            # http://localhost:8000 (or your configured port)
-
-# terminal 2 — Cypress, from this repo
 pnpm cypress:open                # interactive
-pnpm cypress:run                 # headless, every spec
+pnpm cypress:run                 # headless, every spec of the current mode
 pnpm cypress:run:registration                 # headless, just the behavioral flow specs
 pnpm cypress:run:registration:self-excluded   # headless, just the new flow's migratable/self-exclusion conditions
 pnpm cypress:run:translations                 # headless, just the copy/i18n checks
 pnpm cypress:run:legacy                       # headless, just the pre-KIB-8932 flow
 pnpm cypress:run:legacy:self-excluded         # headless, just the legacy flow's migratable/self-exclusion conditions
+pnpm typecheck                                # tsc --noEmit over cypress/ and cypress.config.ts
 ```
 
-`baseUrl` in `cypress.config.ts` must match whatever port `apps/core` is
-actually running on locally.
+### Which app the run points at (`FE_TARGET`)
+
+`baseUrl` is resolved at startup, not hardcoded — a preview URL pinned in the
+config dies the moment its PR closes, taking every spec with it. Three named
+targets, set in `.env` (see `.env.example`) or exported per command:
+
+```bash
+FE_TARGET=pr FE_PR=2170      pnpm cypress:run   # that PR's Amplify preview — publicly reachable
+FE_TARGET=local              pnpm cypress:run   # http://localhost:8000 — needs `pnpm --filter core dev` in your mono-fe checkout
+FE_TARGET=dev                pnpm cypress:run   # https://www.kto-dev.com — REQUIRES VPN
+CYPRESS_BASE_URL=https://…   pnpm cypress:run   # escape hatch, ignores the two above
+```
+
+**There is no default target, on purpose.** `www.kto-dev.com` sits behind
+Cloudflare and answers `403` to everything from outside the corporate network —
+so does `api.kto-dev.com` and `boapi.kto-dev.com`. Off VPN, a run against `dev`
+fails in every spec's `before each` on `cy.visit()`: 58 red tests for a reason
+that has nothing to do with any of them. Naming the target is cheaper than
+debugging that. The Amplify previews, by contrast, *are* publicly reachable,
+which is what makes them the target a CI runner can use with no VPN at all.
+
+An invalid target, a missing one, or `FE_TARGET=pr` without `FE_PR`, fails at
+startup with a message saying what to do rather than a confusing `undefined`
+baseUrl. Every run prints a one-line banner with the resolved target, mode and
+backend — flagging VPN when the combination needs it — before it starts.
+
+All three targets build with `GATSBY_KTO_API=https://api.kto-dev.com`
+(`apps/core/.env.development` and `.env.amplify`), so **switching FE target
+never changes anything on the backend side of a run** — one test identity, one
+test-support host and one set of GrowthBook values serve all three.
+
+`FE_TARGET=local` also gets a longer `pageLoadTimeout` (120s): `gatsby develop`
+compiles a page on first request, so the very first `cy.visit('/registro/')`
+can take far longer than it does against a built deploy.
+
+### Two tracks: `mocked` (default) and `integrated` (`CY_MODE`)
+
+```bash
+pnpm cypress:run                       # CY_MODE=mocked — every business endpoint intercepted
+CY_MODE=integrated pnpm cypress:run    # real backend on dev/stg — see "Integrated suite" below
+```
+
+`specPattern` follows the mode, so an integrated spec can never be picked up by
+an accidental run of the fast track (and vice versa):
+
+| Mode | Specs | Shared mutable data | Fit for a PR gate |
+|---|---|---|---|
+| `mocked` | `cypress/e2e/{registration,legacy,translations}/**` | no | **yes** |
+| `integrated` | `cypress/e2e/integrated/**` | yes (one test identity) | no — scheduled/on-demand |
+
+VPN is a property of the **target**, not of the mode: `local` and `pr` need
+none, `dev` always does. `integrated` needs it on top of that regardless of
+target, because `/test-support/**` is only routed on the internal gateway. So
+`mocked` + `pr` is the only combination that runs from anywhere — which is
+exactly the one a PR gate wants.
 
 ### Default viewport is mobile (iPhone X)
 
@@ -113,9 +177,13 @@ cypress/
   e2e/legacy/               # pre-KIB-8932 login/register flow (still live
                             # whenever fe_igp_registration_new_ui_experience
                             # is off), isolated from the new-flow matrix specs
+  e2e/integrated/           # CY_MODE=integrated — the same UI driven against the
+                            # real backend on dev/stg (see below). Empty until the
+                            # first journey lands
   fixtures/registration/   # stubbed GrowthBook features response
   fixtures/adopt-consent.json  # captured AdOpt cookie value (see below)
-  support/                 # commands.ts, e2e.ts
+  support/                 # e2e.ts, commands.ts (mocked suite),
+                           # commands/api.ts (integrated suite's cy.request layer)
 ```
 
 `cypress/support/e2e.ts` also has a global `beforeEach` that runs before
@@ -206,6 +274,16 @@ a real, well-known CEP (Av. Paulista, São Paulo) — it and the state/city
 dropdowns it validates against both come from the same real backend, so a
 hand-rolled CEP response risks a name mismatch a real one can't.
 
+**This spec needs VPN, and it is the only one that does.** Beyond the CEP
+above, `useRegisterData`'s `initNationalities()`
+(`apps/core/src/hooks/useRegisterData.js`) fills the `#nationality` dropdown
+from a real API call and swallows the failure (`if (!ok) return`), so off the
+corporate network the dropdown is simply empty and
+`cy.select('Brasileira')` fails — taking 5 of this spec's tests with it, for a
+reason that has nothing to do with the flow under test. Everything else in the
+mocked suite passes from anywhere: 85 of 94 green off VPN, the 6 failures all
+here, 3 skipped by design.
+
 **Login's migratable/self-exclusion check** (`cypress/e2e/legacy/login/self-excluded.cy.ts`,
 `pnpm cypress:run:legacy:self-excluded`) — kept in its own file, alongside
 `login.cy.ts` (the plain-login behavior) but separate, so these conditions
@@ -259,6 +337,116 @@ of that same function and dodge the crash — see the comment in
 `cypress/e2e/legacy/register.cy.ts`. Worth a real bug report to whoever
 still owns this flow.
 
+## Integrated suite (`CY_MODE=integrated`)
+
+The same UI, driven against the real backend on dev — the Cypress counterpart
+of the Bruno flows in `player-service/http/bruno-flows` (KIB-8187) and
+`auth-service/http/bruno-flows` (KIB-8448), which is where the mechanics below
+come from. It exists to prove what neither of the other two layers can:
+
+| Layer | Proves | Runs |
+|---|---|---|
+| Bruno flows (BE repos) | the API accepts/rejects correctly — 28 `/registration/v4` guards, SIGAP, provider fixtures | manual/scheduled, VPN |
+| this repo, `mocked` | the FE reacts correctly to every response shape | **PR gate**, no VPN |
+| this repo, `integrated` | FE and BE **agree** — request contract, `messageCode`s, resulting player state | scheduled/on-demand, VPN |
+
+### Topology
+
+The FE talks to the public gateway; setup and teardown talk to the internal
+one, which is the only place `/test-support/**` is routed (confirmed in
+`gitops/clusters/kto-bet-br-dev/apps/player-service/values.yaml`):
+
+```
+browser (UI)  ->  api.kto-dev.com            cpf-checks/v4, registration/v4, auth/login, …
+cy.request    ->  boapi.kto-dev.com/player   test-support: recycle, seeds  (VPN required)
+cy.request    ->  api.kto-dev.com            registration/email/mark-verified (no VPN)
+```
+
+`cy.request` runs in Cypress's Node process — no CORS, no browser sandbox — so
+it can reach the internal gateway the page itself cannot.
+
+### What stays stubbed even here
+
+GrowthBook, `/country/check`, `meta.json`, Mixpanel, Smartico/GSI, and the
+`send-token`/`validate-token` pair. **Not** the twelve business endpoints.
+
+One rule about the flag fixture: a `fe_`-prefixed flag is FE-only and can be
+stubbed to anything, but a flag with **no prefix is read by the backend too**
+under the SCREAMING_CASE twin of the same name
+(`captcha_registration_solution` ↔ `CAPTCHA_REGISTRATION_SOLUTION`,
+`player_registration_national_id_check` ↔ `PLAYER_REGISTRATION_NATIONAL_ID_CHECK`,
+`igp_registration_verification_phases` ↔ `IGP_REGISTRATION_VERIFICATION_PHASES`).
+Those must mirror the environment's real values — invent one and the FE and the
+backend disagree, and the flow fails for a reason that has nothing to do with
+the test.
+
+### E-mail verification cannot be driven through the UI
+
+The real OTP is a 4-digit code delivered to a mailbox nothing here can read.
+`cy.markEmailVerified()` is the way through — `POST
+/registration/email/mark-verified`, the same automation path the Bruno flows
+use, exposed on the public gateway. Hiding the step in the UI with
+`visible: false` does **not** work: `/registration/v4` still rejects a
+pre-registration without a verified e-mail ("Email cannot be null", pinned by
+guard 02 of `flow-1n-registration-guards`).
+
+### Test identity, and cleaning up after it
+
+One fixed CPF (`FLOW_TEST_CPF`) with epoch-derived e-mail and mobile, recycled
+between runs — `cy.recyclePlayer()`, i.e. `DELETE
+/test-support/players/{nationalId}`. Same scheme as the Bruno flows, with two
+differences that come from Cypress rather than Bruno:
+
+- **Clean before *and* after.** Mocha's `after` does not run when the browser
+  crashes or the run is interrupted; Bruno gets away with a single trailing
+  `99-cleanup` only because its runner is strictly linear. Pass
+  `{ expectClean: true }` on the `beforeEach` call to get a loud log when the
+  identity *was* dirty, i.e. when a previous run died mid-way.
+- **Don't parallelise.** Specs inside one `cypress run` are already sequential;
+  parallelism only arrives with `--parallel` + Cypress Cloud, so the fix is
+  simply never to enable it here. The collision that actually bites is two
+  people running the same CPF at the same time — hence one CPF per machine, in
+  each person's own `.env`.
+
+Every seed (`cy.seedJudicialExclusion`, `cy.seedBlacklistEmail`) **must** be
+cleared in the same spec, with the recycle as the safety net — a leaked seed
+contaminates the environment for everyone. Keep blacklist patterns narrow
+enough to match only this suite's own addresses, the way the Bruno flow uses a
+throwaway domain.
+
+`recyclePlayer` frees the identity; it is not erasure. The backend tombstones
+`national_id`/`email`/`username`/`mobile_number` on the `users` row, closes the
+account, deletes the Keycloak user and removes a leftover pre-registration —
+but the CPF still reached anti-fraud (with the provider's real name/DOB),
+SIGAP, the `PlayerRegisteredEvent` Kafka stream and the service logs, none of
+which any cleanup touches. Worth knowing before choosing which CPF to use.
+
+### Guards
+
+`cypress.config.ts` refuses to start an integrated run when `FLOW_TEST_CPF`,
+`FLOW_USER_PASSWORD` or `TEST_SUPPORT_API_KEY` is missing, or when the resolved
+internal gateway is not an allow-listed dev/stg host — the client-side mirror of
+the backend's own fail-closed `TestSupportGuard`. Both fail at config time, not
+three steps into a journey that has already written data.
+
+Before the first run, three things are worth checking on the environment:
+
+1. GrowthBook: are `CAPTCHA_CPFCHECK_FEATURE`,
+   `CAPTCHA_EMAIL_VERIFICATION_FEATURE` and `CAPTCHA_REGISTRATION_FEATURE` off?
+   `CaptchaValidateTokenService.validate()` returns success before it ever looks
+   at a token when the endpoint's flag is off, which is the cheapest way past
+   captcha. The `x-kto-automation` header the Bruno flows use is **not** an
+   option from the browser: the public gateway's `accessControlAllowHeaders`
+   does not list it, so the CORS preflight kills the request.
+2. Is the test-support layer live?
+   `curl -s https://boapi.kto-dev.com/player/v3/api-docs | grep -c test-support`
+   → `1`. Note the account **status** and **lock** seeders live on a separate
+   branch, and kyc-service has its own test-support layer — check both before
+   relying on the sensitive-login scenarios.
+3. A test CPF that is valid in the anti-fraud provider's sandbox **with
+   complete basic data** — a CPF with no name/DOB there makes the
+   `/registration/v4` enrichment fail, which looks like a test bug and isn't.
+
 ## Custom commands (`cypress/support/commands.ts`)
 
 - `cy.stubGrowthbookFeatures(overrides?)` — intercepts the GrowthBook
@@ -304,3 +492,39 @@ still owns this flow.
 - `cy.fillCpfStep()`, `fillPasswordStep()`, `selectEmailVerificationMethod()`,
   `selectGoogleVerificationMethod()`, `fillEmailStep()`, `fillOtp()` — fill
   and submit one step, assuming its network stub (if any) is already set up.
+  These are the one part of the support layer both modes share: driving the UI
+  is identical whether the backend behind it is stubbed or real.
+
+## Backend commands (`cypress/support/commands/api.ts`)
+
+Integrated suite only (`CY_MODE=integrated`), and all `cy.request` rather than
+`cy.intercept` — see "Integrated suite" above for the topology and the rules
+around cleanup. Declared in both modes, since declaring a command costs nothing
+until it is called.
+
+- `cy.recyclePlayer(nationalId?, { expectClean? })` — frees the test identity
+  for the next run (`DELETE /test-support/players/{nationalId}`). Idempotent,
+  200 even with nothing to recycle, so it is safe to call defensively — and it
+  should be called in `beforeEach` *and* `after`, not just `after`. Yields the
+  backend's report (`userRecycled`, `preRegistrationDeleted`) or `null` when the
+  call failed, in which case it logs loudly instead of failing the test.
+  `expectClean: true` logs a warning when the identity *was* dirty on entry,
+  i.e. a previous run died before cleaning up.
+- `cy.markEmailVerified(email, nationalId?)` — the automation path past e-mail
+  verification (`POST /registration/email/mark-verified`, public gateway, no
+  VPN). Body is snake_case, matching the backend DTO.
+- `cy.freshIdentity()` — yields `{ cpf, email, mobile, password }`: fixed CPF
+  (the recycle is what frees it), epoch-derived e-mail and mobile so two runs
+  never collide on the unique columns.
+- `cy.seedJudicialExclusion(nationalId?)` / `cy.clearJudicialExclusion(nationalId?)`
+  — TEST-ONLY seed reaching the judicial branch of registration. Every seed
+  MUST be cleared in the same spec.
+- `cy.seedBlacklistEmail(pattern)` / `cy.clearBlacklistEmail(id)` — blacklists
+  an e-mail pattern, yielding the row id needed to remove it. Keep the pattern
+  narrow enough that only this suite's own addresses can match it.
+- `cy.pollUntil(description, predicate, { attempts?, waitMs? })` — bounded
+  retry for state the platform only reaches asynchronously (the KYC player is
+  created by a Kafka consumer, so there is nothing to wait on synchronously).
+  The Cypress equivalent of the Bruno flows' `bru.setNextRequest` self-loops;
+  `description` is what the timeout message names, so a failure reads as a
+  diagnosis.

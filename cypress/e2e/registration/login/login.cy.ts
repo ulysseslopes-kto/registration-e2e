@@ -1,7 +1,7 @@
 /**
  * "Registration 2026" login landing (test matrix section 01, LOGIN-01..08).
  * LOGIN-05/06 (Google SSO) are skipped — `useGoogleLogin` opens a real
- * Google OAuth popup Cypress cannot drive; see apps/e2e/README.md.
+ * Google OAuth popup Cypress cannot drive; see README.md.
  * Every test here runs at the suite's default viewport (iPhone X — see
  * cypress.config.ts); LOGIN-01 also runs once at a desktop viewport, to
  * catch layout/interaction regressions specific to larger screens.
