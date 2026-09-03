@@ -20,7 +20,9 @@
  * Clicking "Próximo" there still fires the same `aditionalChecks()`
  * (e-mail-taken check, then the CPF check when
  * `player_registration_national_id_check` is on) as a plain registration —
- * `stubEmailCheck()`/`stubLegacyCpfCheck()` below are for that.
+ * `stubEmailCheck()`/`stubLegacyCpfCheck()` below are for that, and the
+ * "e-mail already in use"/"CPF already registered" tests below exercise the
+ * failure side of both.
  *
  * `useRegistrationSteps.js`'s own `isMigratable` concept (which would skip
  * every non-start step) never actually engages — nothing in the codebase
@@ -42,6 +44,15 @@
  * (`fieldsToWatch` in that component) — `cep` itself isn't required — so it
  * enables on its own once that prefill resolves, with nothing here typed
  * into the CEP field at all.
+ *
+ * `onSubmit` (login.js) checks `isMigratable` before ever looking at
+ * `isSelfExcluded`, and before validating the password against
+ * `passwordRegex` opens the modal — two precedence/ordering conditions
+ * pinned by the tests below rather than by `self-excluded.cy.ts` (see that
+ * file's header). A failed `is-migrateable` call itself is also covered
+ * here: `getUserMigratableStatus` swallows a non-2xx response into
+ * `{ isMigratable: false, userData: {} }`, so `onSubmit` falls through to a
+ * normal `doLogin` rather than blocking the user.
  */
 describe('Legacy login — migratable flow (full registration)', () => {
   const LEGACY_FLOW = {
@@ -60,25 +71,50 @@ describe('Legacy login — migratable flow (full registration)', () => {
     },
   }
 
-  it('a migratable account completes the migration modal and registers', () => {
+  /**
+   * A real capture of a migratable `POST /registration/user/is-migrateable`
+   * response — an existing account's data to carry into the modal, including
+   * the `state`/`city`/`address` the address step prefills from (file
+   * header).
+   */
+  const MIGRATABLE_USER_DATA = {
+    migrateable: true,
+    hasBalance: true,
+    isSelfExcluded: null,
+    selfExclusionEndDate: null,
+    nationalId: '01564721043',
+    phone: '51988888888',
+    phonePrefix: '+55',
+    state: 'Rio Grande do Sul',
+    city: 'Santa Cruz do Sul',
+    address: '123',
+    zipCode: null,
+  }
+
+  const submitLoginForm = (username: string, password = 'Sup3rSecret!23') => {
+    cy.get('#input-new-username').type(username)
+    cy.get('#input-new-password').type(password)
+    cy.dismissCookieBannerIfVisible()
+    cy.get('#new-login').click()
+  }
+
+  const checkModalConsents = () => {
+    cy.get('#register-modal #nextBtn1').should('be.disabled')
+    cy.get('#register-modal #tandc').check({ force: true })
+    cy.get('#register-modal #privacyPolicy').check({ force: true })
+    cy.get('#register-modal #belongHere').check({ force: true })
+    cy.get('#register-modal #nextBtn1').should('not.be.disabled')
+  }
+
+  beforeEach(() => {
     cy.stubGrowthbookFeatures(LEGACY_FLOW)
-    // A real capture of POST /registration/user/is-migrateable — migratable,
-    // with an existing account's data to carry into the modal, including the
-    // `state`/`city`/`address` the address step below prefills from (see the
-    // file header).
-    cy.stubMigratableStatus({
-      migrateable: true,
-      hasBalance: true,
-      isSelfExcluded: null,
-      selfExclusionEndDate: null,
-      nationalId: '01564721043',
-      phone: '51988888888',
-      phonePrefix: '+55',
-      state: 'Rio Grande do Sul',
-      city: 'Santa Cruz do Sul',
-      address: '123',
-      zipCode: null,
-    })
+    cy.acceptCookieBanner()
+    cy.visit('/login/')
+    cy.dismissCookieBannerIfVisible()
+  })
+
+  it('a migratable account completes the migration modal and registers', () => {
+    cy.stubMigratableStatus(MIGRATABLE_USER_DATA)
     cy.stubEmailCheck()
     cy.stubLegacyCpfCheck()
     cy.stubSendToken()
@@ -87,23 +123,13 @@ describe('Legacy login — migratable flow (full registration)', () => {
     cy.stubLegacySmsValidate()
     cy.stubRegister()
     cy.stubLogin() // loginUser() downstream calls, after a successful registration/v4
-    cy.acceptCookieBanner()
-    cy.visit('/login/')
-    cy.dismissCookieBannerIfVisible()
-
-    cy.get('#input-new-username').type('e2e-test@example.com')
-    cy.get('#input-new-password').type('Sup3rSecret!23')
-    cy.dismissCookieBannerIfVisible()
-    cy.get('#new-login').click()
+    submitLoginForm('e2e-test@example.com')
     cy.wait('@migratableStatus')
 
     cy.get('#register-modal').should('be.visible')
     cy.contains('Bem-vindo de volta!').should('be.visible')
-    cy.get('#register-modal #nextBtn1').should('be.disabled')
-    cy.get('#register-modal #tandc').check({ force: true })
-    cy.get('#register-modal #privacyPolicy').check({ force: true })
-    cy.get('#register-modal #belongHere').check({ force: true })
-    cy.get('#register-modal #nextBtn1').should('not.be.disabled').click()
+    checkModalConsents()
+    cy.get('#register-modal #nextBtn1').click()
 
     // Same `aditionalChecks()` as a plain registration's first step (file
     // header) — the e-mail-taken check, then the CPF check.
@@ -129,5 +155,90 @@ describe('Legacy login — migratable flow (full registration)', () => {
       .and('not.be.disabled')
       .click()
     cy.wait('@register')
+  })
+
+  it('a migratable-and-self-excluded account still opens the migration modal (isMigratable wins)', () => {
+    // `onSubmit` checks `isMigratable` before ever reading `isSelfExcluded` —
+    // this account is both, and should still land on the migration modal,
+    // never on the self-exclusion error `self-excluded.cy.ts` covers.
+    cy.stubMigratableStatus({
+      ...MIGRATABLE_USER_DATA,
+      isSelfExcluded: true,
+      selfExclusionEndDate: '2026-12-31T23:59:00Z',
+    })
+    submitLoginForm('e2e-test@example.com')
+    cy.wait('@migratableStatus')
+
+    cy.get('#register-modal').should('be.visible')
+    cy.contains('Bem-vindo de volta!').should('be.visible')
+    cy.contains('Você não pode entrar ou registrar-se no momento').should(
+      'not.exist',
+    )
+  })
+
+  it('a migratable account with a password failing the strength check gets the password hint, not the modal', () => {
+    // `onSubmit` also checks `passwordRegex` before opening the modal —
+    // 'password1' has no uppercase letter and no special character, so it
+    // fails `passwordRegex` (apps/core/.../passwordValidation.js) even
+    // though the login form's own client-side validation (non-empty) lets
+    // it through and the migratable-status call still fires.
+    cy.stubMigratableStatus(MIGRATABLE_USER_DATA)
+    submitLoginForm('e2e-test@example.com', 'password1')
+    cy.wait('@migratableStatus')
+
+    cy.contains(
+      'São necessários 8-20 caracteres incluindo pelo menos uma letra minúscula, uma maiúscula, números e caracteres especiais (#@%)',
+    ).should('be.visible')
+    cy.get('#register-modal').should('not.exist')
+  })
+
+  it('a failed migratable-status check falls through to a normal login attempt', () => {
+    // `getUserMigratableStatus` swallows a non-2xx response into
+    // `{ isMigratable: false, userData: {} }` rather than propagating the
+    // error, so `onSubmit` proceeds straight to `doLogin` as if the account
+    // were simply not migratable.
+    cy.stubMigratableStatus({ statusCode: 500 })
+    cy.stubLogin()
+    submitLoginForm('e2e-test@example.com')
+    cy.wait('@migratableStatus')
+    cy.wait('@login')
+
+    cy.get('#register-modal').should('not.exist')
+    cy.url().should('not.include', '/login')
+  })
+
+  it('an e-mail already registered elsewhere blocks the migration step', () => {
+    cy.stubMigratableStatus(MIGRATABLE_USER_DATA)
+    cy.stubEmailCheck({ valid: false })
+    cy.stubLegacyCpfCheck()
+    submitLoginForm('e2e-test@example.com')
+    cy.wait('@migratableStatus')
+
+    checkModalConsents()
+    cy.get('#register-modal #nextBtn1').click()
+    cy.wait('@emailCheck')
+
+    cy.contains(
+      'Este e-mail já está em uso. Por favor, escolha outro!',
+    ).should('be.visible')
+    // Never advanced past the modal's first step.
+    cy.get('#otp-input').should('not.exist')
+  })
+
+  it('a CPF already registered elsewhere blocks the migration step', () => {
+    cy.stubMigratableStatus(MIGRATABLE_USER_DATA)
+    cy.stubEmailCheck()
+    cy.stubLegacyCpfCheck({ status: 'DUPLICATED' })
+    submitLoginForm('e2e-test@example.com')
+    cy.wait('@migratableStatus')
+
+    checkModalConsents()
+    cy.get('#register-modal #nextBtn1').click()
+    cy.wait('@emailCheck')
+    cy.wait('@legacyCpfCheck')
+
+    cy.contains('Esse CPF já está registrado com a KTO').should('be.visible')
+    // Never advanced past the modal's first step.
+    cy.get('#otp-input').should('not.exist')
   })
 })
