@@ -93,7 +93,14 @@ beforeEach(() => {
   cy.intercept('GET', '**/country/registration-dropdown', {
     data: [
       {
-        id: '1',
+        // Brazil's real id on api.kto-dev.com — not an arbitrary stand-in.
+        // `getCountryRegions`/`getCountryCities` (useRegisterData.js) call
+        // the REAL `/country/{id}/regions` and `/city?country_id={id}` with
+        // whatever id lands here; a made-up id like `1` gets a real
+        // `{ data: [] }` back (verified against the real API), silently
+        // leaving the address step's state/city dropdowns empty for any
+        // spec that doesn't route around them via a real CEP lookup.
+        id: 31,
         name: 'Brazil',
         code: 'BR',
         phone_prefix: '55',

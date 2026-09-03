@@ -1,22 +1,19 @@
 /**
- * New "Registration 2026" login's pre-login migratable/self-exclusion check
+ * New "Registration 2026" login's pre-login self-exclusion check
  * (`AuthLandingRoute.js` → `getSelfExclusionMessage`,
  * modules/registration/src/features/auth-landing/self-exclusion.ts).
  * `onLogin` awaits `getUserMigratableStatus`
  * (`POST /registration/user/is-migrateable`) before calling `doLogin`. Kept
- * in its own file (separate from `cypress/e2e/registration/login/login.cy.ts`,
- * the "Matriz de Testes" LOGIN-01..08 specs) so these conditions can be run
- * in isolation: `pnpm cypress:run:registration:self-excluded`, or point
- * Cypress at this file directly. Mirrors
- * `cypress/e2e/legacy/login/self-excluded.cy.ts` for the pre-KIB-8932 flow.
+ * in its own file (separate from `cypress/e2e/mocked/new/login/login.cy.ts`,
+ * the "Matriz de Testes" LOGIN-01..08 specs) so this condition can be run in
+ * isolation — point Cypress at this file directly, or with `--spec`. Mirrors
+ * `cypress/e2e/mocked/legacy/login/self-excluded.cy.ts` for the pre-KIB-8932
+ * flow.
  *
- * Unlike the legacy flow, a migratable account here does **not** open a
- * migration modal — that's an explicit TODO in `AuthLandingRoute.js`
- * ("Not reimplemented here yet") — it just proceeds straight to `doLogin`
- * as if nothing were different. `getSelfExclusionMessage` also returns
- * `undefined` for a migratable account regardless of its self-exclusion
- * status (`if (isMigratable) return undefined`, checked *before* looking at
- * `isSelfExcluded` at all) — the last two tests below pin that down.
+ * `getSelfExclusionMessage` returns early (`undefined`) when the account is
+ * migratable, *before* ever looking at `isSelfExcluded` — those
+ * precedence-pinning scenarios live with the migratable ones instead:
+ * `cypress/e2e/mocked/new/login/migratable.cy.ts`.
  *
  * The self-exclusion modal (`AccountRestrictionModal`) stays mounted at all
  * times (`createPortal` to `document.body`) and only toggles an
@@ -32,7 +29,7 @@
  * of those moments missing the check is enough to cover the submit button
  * or the account-restriction modal's own title underneath it.
  */
-describe('New login — migratable/self-exclusion conditions', () => {
+describe('New login — self-exclusion condition', () => {
   const submitLoginForm = (password = 'Sup3rSecret!23') => {
     // `.should('have.value', ...)` waits for the controlled input to
     // actually catch up before moving on — otherwise a slow re-render can
@@ -122,37 +119,6 @@ describe('New login — migratable/self-exclusion conditions', () => {
 
   it('a not-migratable, not-excluded account logs in normally, modal never shown', () => {
     cy.stubMigratableStatus() // defaults: migrateable false, not excluded
-    cy.stubLogin()
-    submitLoginForm()
-    cy.wait('@migratableStatus')
-    cy.wait('@login')
-
-    // A successful login navigates away from /login entirely — there's no
-    // modal (or anything else from this page) left to assert against.
-    cy.url().should('not.include', '/login')
-  })
-
-  it('a migratable account logs in normally — no migration modal here yet, self-exclusion never checked', () => {
-    cy.stubMigratableStatus({ migrateable: true })
-    cy.stubLogin()
-    submitLoginForm()
-    cy.wait('@migratableStatus')
-    cy.wait('@login')
-
-    // A successful login navigates away from /login entirely — there's no
-    // modal (or anything else from this page) left to assert against.
-    cy.url().should('not.include', '/login')
-  })
-
-  it('a migratable AND self-excluded account still logs in normally, not blocked', () => {
-    // `getSelfExclusionMessage` returns early on `isMigratable` before ever
-    // looking at `isSelfExcluded` — this pins that precedence down
-    // explicitly, in case that ordering ever gets reshuffled.
-    cy.stubMigratableStatus({
-      migrateable: true,
-      isSelfExcluded: true,
-      selfExclusionEndDate: '2026-12-31T23:59:00Z',
-    })
     cy.stubLogin()
     submitLoginForm()
     cy.wait('@migratableStatus')
