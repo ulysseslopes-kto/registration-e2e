@@ -3,18 +3,18 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
+    "setup:aws": "bash scripts/setup-aws.sh",
     "typecheck": "tsc --noEmit",
     "precypress:open": "./scripts/check-env.sh",
     "cypress:open": "cypress open",
+    "cypress:open:local:mocked": "./scripts/check-env.sh && FE_TARGET=local CY_MODE=mocked cypress open",
+    "cypress:open:local:integrated": "./scripts/check-env.sh && FE_TARGET=local CY_MODE=integrated cypress open",
+    "cypress:open:dev:mocked": "./scripts/check-env.sh && FE_TARGET=dev CY_MODE=mocked cypress open",
+    "cypress:open:dev:integrated": "./scripts/check-env.sh && FE_TARGET=dev CY_MODE=integrated cypress open",
+    "cypress:open:pr:mocked": "./scripts/check-env.sh && FE_TARGET=pr CY_MODE=mocked cypress open",
+    "cypress:open:pr:integrated": "./scripts/check-env.sh && FE_TARGET=pr CY_MODE=integrated cypress open",
     "precypress:run": "./scripts/check-env.sh",
-    "cypress:run": "cypress run",
-    "cypress:run:registration": "cypress run --spec \"cypress/e2e/registration/**/*.cy.ts\"",
-    "cypress:run:registration:self-excluded": "cypress run --spec \"cypress/e2e/registration/login/self-excluded.cy.ts\"",
-    "cypress:run:translations": "cypress run --spec \"cypress/e2e/translations/**/*.cy.ts\"",
-    "cypress:run:legacy": "cypress run --spec \"cypress/e2e/legacy/**/*.cy.ts\"",
-    "cypress:run:legacy:self-excluded": "cypress run --spec \"cypress/e2e/legacy/login/self-excluded.cy.ts\"",
-    "pretest:e2e": "./scripts/check-env.sh",
-    "test:e2e": "cypress run"
+    "cypress:run": "cypress run"
   },
   "devDependencies": {
     "cypress": "^13.17.0",
