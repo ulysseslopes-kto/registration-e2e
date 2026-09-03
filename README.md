@@ -37,9 +37,10 @@ unrelated reasons:
 
 1. **`pnpm install` gets a 401 from a private registry** — if this repo (or
    your global pnpm config) points `@kto`/other scopes at KTO's CodeArtifact
-   proxy, your local auth token may have expired. Refresh it the same way you
-   do for any other KTO project (SSO login / `aws codeartifact login`
-   equivalent).
+   proxy, your local auth token may have expired. Run `pnpm setup:aws`
+   (`scripts/setup-aws.sh`) to install/configure the AWS CLI if needed, log
+   into SSO if your session expired, and refresh the CodeArtifact token —
+   same script mono-fe uses for this.
 
 2. **`cypress install` fails with `self-signed certificate in certificate
    chain`** — the corporate proxy does TLS inspection on
@@ -88,15 +89,21 @@ cryptic Cypress error.
 ## Running
 
 ```bash
-pnpm cypress:open                # interactive
-pnpm cypress:run                 # headless, every spec of the current mode
-pnpm cypress:run:registration                 # headless, just the behavioral flow specs
-pnpm cypress:run:registration:self-excluded   # headless, just the new flow's migratable/self-exclusion conditions
-pnpm cypress:run:translations                 # headless, just the copy/i18n checks
-pnpm cypress:run:legacy                       # headless, just the pre-KIB-8932 flow
-pnpm cypress:run:legacy:self-excluded         # headless, just the legacy flow's migratable/self-exclusion conditions
-pnpm typecheck                                # tsc --noEmit over cypress/ and cypress.config.ts
+pnpm cypress:open                # interactive, FE_TARGET from .env
+pnpm cypress:run                 # headless, every spec of the current mode, FE_TARGET from .env
+pnpm cypress:open:local          # interactive, FE_TARGET=local (overrides .env)
+pnpm cypress:open:dev            # interactive, FE_TARGET=dev
+pnpm cypress:open:pr             # interactive, FE_TARGET=pr (FE_PR still comes from .env)
+pnpm cypress:run:local           # headless, FE_TARGET=local
+pnpm cypress:run:dev             # headless, FE_TARGET=dev
+pnpm cypress:run:pr              # headless, FE_TARGET=pr
+pnpm typecheck                   # tsc --noEmit over cypress/ and cypress.config.ts
 ```
+
+To run a subset of specs instead of a whole mode, pass `--spec` directly —
+e.g. `pnpm cypress:run --spec "cypress/e2e/mocked/legacy/**/*.cy.ts"` or
+`pnpm cypress:run --spec "cypress/e2e/mocked/new/login/self-excluded.cy.ts"`
+(see "Layout" below for the full tree).
 
 ### Which app the run points at (`FE_TARGET`)
 
@@ -145,7 +152,7 @@ an accidental run of the fast track (and vice versa):
 
 | Mode | Specs | Shared mutable data | Fit for a PR gate |
 |---|---|---|---|
-| `mocked` | `cypress/e2e/{registration,legacy,translations}/**` | no | **yes** |
+| `mocked` | `cypress/e2e/mocked/**` | no | **yes** |
 | `integrated` | `cypress/e2e/integrated/**` | yes (one test identity) | no — scheduled/on-demand |
 
 VPN is a property of the **target**, not of the mode: `local` and `pr` need
@@ -167,24 +174,57 @@ coverage is the exception here, not the default.
 
 ## Layout
 
+Every spec lives at the intersection of two independent axes — **how** the
+backend is reached (top level) and **which** UI is under test (second
+level):
+
 ```
 cypress/
-  e2e/registration/        # spec files, one per area of the test matrix
-  e2e/translations/        # copy/i18n checks, isolated from the matrix specs
-                            # (see cypress:run:translations above) — CMS copy
-                            # changes independently of flow behavior, so it's
-                            # kept out of the specs it would otherwise flake
-  e2e/legacy/               # pre-KIB-8932 login/register flow (still live
-                            # whenever fe_igp_registration_new_ui_experience
-                            # is off), isolated from the new-flow matrix specs
-  e2e/integrated/           # CY_MODE=integrated — the same UI driven against the
-                            # real backend on dev/stg (see below). Empty until the
-                            # first journey lands
-  fixtures/registration/   # stubbed GrowthBook features response
-  fixtures/adopt-consent.json  # captured AdOpt cookie value (see below)
-  support/                 # e2e.ts, commands.ts (mocked suite),
-                           # commands/api.ts (integrated suite's cy.request layer)
+├── e2e/
+│   ├── mocked/          # CY_MODE=mocked — every business call intercepted, no VPN
+│   │   ├── legacy/      # pre-KIB-8932 UI, still live whenever
+│   │   │   └── login/   # fe_igp_registration_new_ui_experience is off
+│   │   └── new/         # "Registration 2026" (KIB-8932) — current login/register UI
+│   │       ├── login/
+│   │       └── registration/
+│   └── integrated/      # CY_MODE=integrated — same UI, driven against the REAL
+│       ├── legacy/      # backend on dev/stg (see below). No cy.intercept() on any
+│       └── new/         # business endpoint — only cy.request() in commands/api.ts,
+│                         # for setup/teardown against the internal gateway
+├── fixtures/
+│   └── registration/    # stubbed GrowthBook features response (mocked suite only)
+└── support/
+    └── commands/        # commands/api.ts — integrated suite's cy.request layer
 ```
+
+- **`mocked/` vs `integrated/` — how the backend is reached.** `mocked/`
+  stubs every business endpoint with `cy.intercept()` (via commands like
+  `stubCpfCheck`, `stubLogin`, `stubRegister`, …), so it needs no VPN and is
+  safe to gate a PR on (see the table above). `integrated/` never intercepts
+  a business endpoint — the browser calls the real API directly, and the
+  only network mocking anywhere in that tree is one deliberate, narrowly
+  scoped exception per flow for the e-mail/phone OTP screens (a real code
+  goes to a real inbox/phone nothing in CI can read — see "E-mail
+  verification cannot be driven through the UI" below). `cy.request()` calls
+  in `commands/api.ts` are a different thing entirely: Node-side setup/
+  teardown against the internal test-support gateway, not a stub of
+  anything the browser does.
+- **`legacy/` vs `new/` — which UI is under test.** `new/` is the current
+  "Registration 2026" (KIB-8932) login/register flow — `AuthLandingRoute`/
+  `modules/registration`'s `useAccountCreate`, rendered whenever
+  `fe_igp_registration_new_ui_experience` is on. `legacy/` is the
+  pre-KIB-8932 single-form login (`LoginContent`) and multi-step register
+  (`RegisterContent`) — a different component tree entirely, with different
+  DOM selectors (`#input-new-username`, `#national_id`, `#otp-input`, `#cep`,
+  …), still rendered whenever that flag is off. The two share most backend
+  endpoints (`/auth/login`, `/registration/email/*`, `/registration/v4`),
+  but the CPF check and phone verification each have a legacy-only endpoint
+  (see "Legacy flow" below).
+
+The two trees aren't a 1:1 mirror of each other — `integrated/` stays to one
+file per flow (a single happy path proving FE and BE agree end to end),
+while `mocked/` splits the same ground into one file per behavior/condition,
+since only the latter needs to cover every branch cheaply.
 
 `cypress/support/e2e.ts` also has a global `beforeEach` that runs before
 every spec, stubbing:
@@ -296,7 +336,7 @@ covered here: self-excluded (blocked with a formatted end-date message, no
 login attempt), migratable with a weak password (password-hint error, no
 modal), migratable with a valid password (opens the `#register-modal`
 migration modal — the same `RegisterContent`/`EmailAndPasswordStep` covered
-in `cypress/e2e/legacy/register.cy.ts`, this time with `flow:
+in `cypress/e2e/mocked/legacy/registration/registration.cy.ts`, this time with `flow:
 REGISTER_MODAL_FLOWS.LOGIN`, gated only by the three consent checkboxes), a
 realistic full response (migratable, `isSelfExcluded`/`selfExclusionEndDate`
 present but `null`), and migratable+self-excluded together (pins down that
@@ -334,7 +374,7 @@ fallback never applies — `formStep` ends up `-1`, and
 `REGISTRATION_STEPS[-1]` is undefined. This suite forces
 `registration_new_flow: true` to route through the other (correct) branch
 of that same function and dodge the crash — see the comment in
-`cypress/e2e/legacy/register.cy.ts`. Worth a real bug report to whoever
+`cypress/e2e/mocked/legacy/registration/registration.cy.ts`. Worth a real bug report to whoever
 still owns this flow.
 
 ## Integrated suite (`CY_MODE=integrated`)

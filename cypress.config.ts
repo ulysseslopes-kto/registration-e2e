@@ -74,7 +74,7 @@ const MODES = ['mocked', 'integrated'] as const
 type Mode = (typeof MODES)[number]
 
 const SPEC_PATTERNS: Record<Mode, string> = {
-  mocked: 'cypress/e2e/{registration,legacy,translations}/**/*.cy.ts',
+  mocked: 'cypress/e2e/mocked/**/*.cy.ts',
   integrated: 'cypress/e2e/integrated/**/*.cy.ts',
 }
 
@@ -170,9 +170,7 @@ export default defineConfig({
     baseUrl: target.baseUrl,
     specPattern: SPEC_PATTERNS[mode],
     supportFile: 'cypress/support/e2e.ts',
-    // A flake used to mean a red run: the AdOpt banner re-rendering and the
-    // real Mixpanel flush timer are both known, accepted sources of it.
-    retries: { runMode: 2, openMode: 0 },
+    retries: { runMode: 0, openMode: 0 },
     // `gatsby develop` compiles a page on first request, so the very first
     // visit against a local target can take far longer than a built deploy.
     pageLoadTimeout: target.label === 'local' ? 120_000 : 60_000,
@@ -187,6 +185,7 @@ export default defineConfig({
       apiUrl: process.env.KTO_API_URL ?? 'https://api.kto-dev.com',
       internalApi: process.env.KTO_INTERNAL_API_URL ?? 'https://boapi.kto-dev.com',
       testCpf: process.env.FLOW_TEST_CPF ?? '',
+      testLoginEmail: process.env.FLOW_TEST_LOGIN_EMAIL ?? '',
       flowPassword: process.env.FLOW_USER_PASSWORD ?? '',
       testEmailDomain: process.env.FLOW_TEST_EMAIL_DOMAIN ?? 'kto.com',
       testSupportKey: process.env.TEST_SUPPORT_API_KEY ?? '',

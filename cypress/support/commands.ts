@@ -34,6 +34,23 @@ Cypress.Commands.add(
 )
 
 /**
+ * Lets the real GrowthBook features response through and patches exactly one
+ * key on the way past — everything else stays whatever is actually live.
+ * Unlike `stubGrowthbookFeatures` (which replaces the whole response with the
+ * fixture), this is for an integrated spec that needs one flag pinned for
+ * determinism — e.g. which UI variant renders — without giving up real flags
+ * for everything else. Call before `cy.visit()`.
+ */
+Cypress.Commands.add('overrideGrowthbookFeature', (key: string, value: unknown) => {
+  cy.intercept('GET', '**/api/features/**', (req) => {
+    req.continue((res) => {
+      res.body.features[key] = value
+      res.send(res.body)
+    })
+  }).as('growthbookFeatures')
+})
+
+/**
  * Stubs `GET /country/check` with a fixed, always-allowed country. Two
  * unrelated consumers read this same response:
  * - `packages/growthbook/src/GrowthBookProvider.tsx` — only needs it to
@@ -337,6 +354,14 @@ Cypress.Commands.add(
  * `depositResponse.data.hasFirstTimeDeposit || user.data.wallet.active`
  * unconditionally right after login, so a response missing either throws an
  * uncaught exception that fails the test even on an otherwise-successful login.
+ *
+ * Also stubs `GET /sportsbook/token` — a login that redirects onto a
+ * sportsbook page (both flows' post-login destination) mounts
+ * `KambiSessionProvider` there, which bootstraps the Kambi widget for the
+ * now-logged-in user and fetches this ticket as part of that
+ * (`getAuthKambiUser`, apps/core/src/context/KambiSessionProvider.js). Not
+ * nested in `{ data }` — `getAuthKambiUser` reads the body directly
+ * (`hasNestedData: false`).
  */
 Cypress.Commands.add(
   'stubLogin',
@@ -369,6 +394,9 @@ Cypress.Commands.add(
     cy.intercept('GET', '**/user-activity-fact/deposit-info', {
       data: { hasFirstTimeDeposit: false },
     }).as('depositInfo')
+    cy.intercept('GET', '**/sportsbook/token', { token: 'e2e-kambi-token' }).as(
+      'kambiToken',
+    )
   },
 )
 
@@ -428,6 +456,28 @@ Cypress.Commands.add('fillEmailStep', (email = 'e2e-test@example.com') => {
   cy.get('.step-primary-button').click()
 })
 
+/**
+ * `PhoneStep` (modules/registration/.../steps/phone-step/phone-step.tsx) —
+ * only rendered when the CPF check reports `mobilePrefixAndNumberRequired`,
+ * so it doesn't run for every identity. No SMS/OTP is involved, unlike the
+ * e-mail step: it's a plain field, safe to automate end to end. `mobile` is
+ * the DDD + number only (no prefix) — the country-code select defaults to
+ * `+55` and isn't touched here.
+ *
+ * `.should('have.value', masked)` waits for the masked/controlled input
+ * (`maskPhone`, packages/utils/src/phone.ts — `(00) 00000-0000`) to actually
+ * catch up with what was typed, same reason as `fillCpfStep`/`fillPasswordStep`
+ * above: without it, a slow React re-render can leave `canProceed`
+ * (`isValidPhoneNumber`) false when `.step-primary-button` gets clicked, so
+ * the click silently no-ops (disabled button) and the spec hangs waiting on
+ * whatever comes after this step instead of failing here with a clear cause.
+ */
+Cypress.Commands.add('fillPhoneStep', (mobile = '11987654321') => {
+  const masked = `(${mobile.slice(0, 2)}) ${mobile.slice(2, 7)}-${mobile.slice(7, 11)}`
+  cy.get('input[inputmode="tel"]').type(mobile).should('have.value', masked)
+  cy.get('.step-primary-button').click()
+})
+
 /** OTP_LENGTH is 4 (email-verification-step.consts.ts) — auto-submits on the 4th digit. */
 Cypress.Commands.add('fillOtp', (code = '1234') => {
   cy.get('input[data-input-otp="true"]').type(code)
@@ -440,6 +490,8 @@ declare global {
       stubGrowthbookFeatures(
         featureOverrides?: Record<string, unknown | null>,
       ): Chainable<null>
+      /** See implementation doc above. */
+      overrideGrowthbookFeature(key: string, value: unknown): Chainable<null>
       /** See implementation doc above. */
       stubCountryCheck(name?: string): Chainable<null>
       /** See implementation doc above. */
@@ -520,6 +572,7 @@ declare global {
       selectEmailVerificationMethod(): Chainable<JQuery<HTMLElement>>
       selectGoogleVerificationMethod(): Chainable<JQuery<HTMLElement>>
       fillEmailStep(email?: string): Chainable<JQuery<HTMLElement>>
+      fillPhoneStep(mobile?: string): Chainable<JQuery<HTMLElement>>
       fillOtp(code?: string): Chainable<JQuery<HTMLElement>>
     }
   }
