@@ -253,6 +253,7 @@ Specs map to the "Matriz de Testes — Registro 2026" (KIB-8932) sections:
 | `shell.cy.ts` | 07 Shared shell & UI | SHELL-01, 03, 05 (02/04 skipped) |
 | `account-create.cy.ts` | — | Standalone full-flow smoke test |
 | `mixpanel-tracking.cy.ts` | — | Mixpanel events fired along the flow (not in the original matrix) |
+| `refer-a-friend.cy.ts` | — | Referral landing screen + `referralToken` on submit (not in the original matrix) |
 | `login/self-excluded.cy.ts` | — | Self-exclusion condition, isolated (not in the original matrix — see below) |
 | `login/migratable.cy.ts` | — | Migratable-account condition, isolated (not in the original matrix — see below) |
 
