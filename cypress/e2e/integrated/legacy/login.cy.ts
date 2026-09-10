@@ -10,15 +10,14 @@
  * `cy.intercept()`-stubbed for it, and this spec doesn't even use a
  * pass-through `cy.intercept(...).as(...)` on it to key a `cy.wait()`: sync
  * is done by waiting on the URL leaving `/login` instead. GrowthBook features
- * are otherwise REAL here (no `cy.stubGrowthbookFeatures()`), and so is `GET
- * /country/check` (no `cy.stubCountryCheck()` either). The one exception is
- * `fe_igp_registration_new_ui_experience`, pinned to `false` via
- * `cy.overrideGrowthbookFeature()` (patches just that key on the real
- * response) so this spec deterministically hits the legacy UI regardless of
- * the flag's live value — `cypress/e2e/integrated/new/login.cy.ts` is the
- * counterpart that pins it `true`. A real country-check response that isn't
- * `active: true` sends `SplitBannerLayout` straight to `/blocked` instead —
- * a real signal, not a spec bug.
+ * are REAL here (no `cy.stubGrowthbookFeatures()`), and so is `GET
+ * /country/check` (no `cy.stubCountryCheck()` either) — this spec relies on
+ * whatever `fe_igp_registration_new_ui_experience` actually is in the target
+ * environment rendering the legacy UI; if that flag flips to `true` there,
+ * this spec starts failing on the `#input-new-username` selectors below, and
+ * that failure is the signal, not a bug in the spec. A real country-check
+ * response that isn't `active: true` sends `SplitBannerLayout` straight to
+ * `/blocked` instead — also a real signal, not a spec bug.
  *
  * Like `cypress/e2e/integrated/new/login.cy.ts` (the new flow's
  * counterpart), this spec does not create or recycle any account — it logs
