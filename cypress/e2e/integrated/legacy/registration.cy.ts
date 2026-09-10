@@ -34,24 +34,18 @@
  *   flow's code path, not confirmed against this one directly. If this spec
  *   ever 400s on the final submit specifically, this stub is the first
  *   place to check.
- * - GrowthBook features are otherwise REAL here (no
- *   `cy.stubGrowthbookFeatures()`), and so is `GET /country/check` (no
- *   `cy.stubCountryCheck()`). The one exception is
- *   `fe_igp_registration_new_ui_experience`, pinned to `false` via
- *   `cy.overrideGrowthbookFeature()` (patches just that key on the real
- *   response) so this spec deterministically hits the legacy UI regardless
- *   of the flag's live value — `cypress/e2e/integrated/new/registration.cy.ts`
- *   is the counterpart that pins it `true`. `registration_new_flow`,
- *   `player_registration_national_id_check`, and
- *   `igp_registration_verification_phases` are still left live — this spec
- *   depends on whatever they actually are in the target environment
- *   rendering the CPF national-id check and the e-mail/phone/address step
- *   set it drives below. If the live config no longer matches that shape,
- *   this spec's failure is the signal, not a bug in the spec — see
- *   `useRegistrationSteps.js` for the crash the mocked suite's fixture
- *   works around, which this spec has no fixture to fall back on. A real
- *   country-check response that isn't `active: true` sends
- *   `SplitBannerLayout` straight to `/blocked` instead — also a real
+ * - GrowthBook features are REAL here (no `cy.stubGrowthbookFeatures()`),
+ *   and so is `GET /country/check` (no `cy.stubCountryCheck()`) — this spec
+ *   depends on whatever `fe_igp_registration_new_ui_experience`,
+ *   `registration_new_flow`, `player_registration_national_id_check`, and
+ *   `igp_registration_verification_phases` actually are in the target
+ *   environment rendering the legacy UI with the CPF national-id check and
+ *   the e-mail/phone/address step set this spec drives below. If the live
+ *   config no longer matches that shape, this spec's failure is the signal,
+ *   not a bug in the spec — see `useRegistrationSteps.js` for the crash the
+ *   mocked suite's fixture works around, which this spec has no fixture to
+ *   fall back on. A real country-check response that isn't `active: true`
+ *   sends `SplitBannerLayout` straight to `/blocked` instead — also a real
  *   signal, not a spec bug.
  *
  * A real, well-known CEP (Av. Paulista, São Paulo/SP) is used for the
@@ -62,12 +56,6 @@
  * `cy.recyclePlayer()` runs before *and* after each test — the test CPF
  * (`Cypress.env('testCpf')`, one per machine) has to be free of any account
  * before a real `registration/v4` will accept it again.
- *
- * `RegisterLobby` (Google sign-in / "Registrar com o E-mail" choice) may or
- * may not be the very first screen on `/registro/`, depending on the live
- * `fe_social_sign_in_enabled` flag — on for this target as of writing. This
- * spec detects and clicks past it rather than assuming either way, same as
- * `cypress/e2e/integrated/legacy/activation-limits.cy.ts`.
  */
 describe('Legacy registration — full flow (integrated backend)', () => {
   before(function () {
@@ -96,12 +84,6 @@ describe('Legacy registration — full flow (integrated backend)', () => {
     cy.dismissCookieBannerIfVisible()
     cy.get('#register-form', { timeout: 10000 }).should('exist')
 
-    // Whether `RegisterLobby` (Google/E-mail choice) is the first screen
-    // here depends on the live `fe_social_sign_in_enabled` flag — on for
-    // this target as of writing, off in the mocked suite's fixture (which
-    // is why the mocked counterpart never needs this). Click past it when
-    // it's there; a no-op wait+no-click when it isn't, since this repo has
-    // no stable selector for that lobby screen to gate on directly.
     cy.get('body').then(($body) => {
       if ($body.find('#national_id').length === 0) {
         cy.contains('Registrar com o E-mail').click()

@@ -33,27 +33,6 @@ Cypress.Commands.add(
   },
 )
 
-/**
- * Lets the real GrowthBook features response through and patches one or more
- * keys on the way past — everything else stays whatever is actually live.
- * Unlike `stubGrowthbookFeatures` (which replaces the whole response with the
- * fixture), this is for an integrated spec that needs a flag pinned for
- * determinism — e.g. which UI variant renders — without giving up real flags
- * for everything else. Call before `cy.visit()`.
- *
- * Calling this more than once in the same test (a real pattern — e.g.
- * pinning both `fe_igp_registration_new_ui_experience` and
- * `fe_registration_loss_limits_enabled`) has to *accumulate* overrides, not
- * replace them: each call registers its own `cy.intercept()` on the same
- * `**\/api/features/**` pattern, and Cypress only ever runs the
- * most-recently-registered one that matches — an unaccumulated second call
- * would silently shadow the first key's override entirely, reverting it to
- * whatever's actually live. `growthbookFeatureOverrides` collects every key
- * requested so far *within this test*, and the intercept (re-registered on
- * every call, but always reading the full accumulated set through the
- * closure) applies all of them together — cleared before each test via
- * `test:before:run` so a previous test's overrides never leak into the next.
- */
 let growthbookFeatureOverrides: Record<string, unknown> = {}
 Cypress.on('test:before:run', () => {
   growthbookFeatureOverrides = {}
@@ -428,25 +407,6 @@ Cypress.Commands.add(
   },
 )
 
-/**
- * The "Registration 2026" activation flow's own step orchestrator
- * (`useActivationSteps`, `modules/registration/.../activation-flow/use-activation-steps.hook.ts`)
- * — `GET /activation/steps`, read once when `ActivationInviteScreen`/
- * `ActivationFlowCard` mounts (to light up their "Ativar minha conta"/
- * "Ativar conta" CTA) and again after each step's `onComplete`
- * (`ActivationStepModal`'s `advanceToStepAfterRead`) to decide what comes
- * next. `getActivationSteps` (`activation.ts`) passes no adapter options, so
- * it uses `apiGET`'s default `hasNestedData: true` — the response body must
- * be wrapped in `{ data: ... }`, unlike `getUserLimitPeriods`/`getUserLimits`
- * elsewhere in this file, which explicitly opt out of that envelope.
- *
- * `active: false` is the default on purpose, not a typo: `isActivationPending`
- * (`use-activation-steps.hook.ts`) is `data?.active === false && steps.length
- * > 0` — with `active: true` the card/invite screen both read "nothing
- * pending" and never show their CTA at all (`ActivationFlowCard`'s
- * `isVisible = enabled && isActivationPending`, `ActivationInviteScreen`'s own
- * `hasNothingToActivate` even navigates away via `onNoPendingSteps`).
- */
 Cypress.Commands.add(
   'stubActivationSteps',
   (
@@ -470,15 +430,6 @@ Cypress.Commands.add(
   },
 )
 
-/**
- * `getUserLimitPeriods` (`GET /limit/period`, `hasNestedData: false`) — the
- * RG-limits screen's `findPeriodByName` matches on `name` (the API's
- * `'Daily'`/`'Weekly'`/`'Monthly'`, not the `'Day'`/`'Week'`/`'Month'` the UI
- * works in) to find this period's `id`/`duration` for the `/limit`
- * payloads. `id: 1, duration: 24` (hours) is what turns into the real
- * `period_id: "1"`/`duration: "1440"` (minutes) the redesigned screen's
- * "Usar limites máximos" path is documented to send.
- */
 Cypress.Commands.add(
   'stubLimitPeriods',
   (
@@ -498,26 +449,6 @@ Cypress.Commands.add(
   },
 )
 
-/**
- * The RG-limits screen's own writes — `POST /limit` for a first-time limit,
- * `PUT /limit/{id}` when one is already active for the period
- * (`buildLossLimitDraft`/`buildSessionLimitDraft`,
- * `activation-limits.utils.ts`). Both endpoints only need `response.ok`
- * (`storeLimit` in `use-rg-limits.hook.ts` never reads the body), so a bare
- * 2xx/non-2xx is enough here — for a test needing one call to fail and the
- * other to succeed (the screen's partial-failure path), intercept
- * `**\/limit` directly instead and branch on `req.body.type`
- * (`'STOP_LOSS'`/`'GAMING_SESSION'`).
- *
- * `POST /limit` isn't exclusive to this screen: `RealityCheckProvider`
- * (globally mounted, `apps/core/src/context/realityCheckProvider.js`) POSTs
- * a `type: 'REALITY_CHECK'` limit of its own the moment `isLoggedIn` is true
- * and the user has none yet — always true on this suite's fake session. A
- * single `POST /limit` intercept would catch that one under the same
- * `@setLimit` alias, ahead of and mixed in with the RG screen's own
- * STOP_LOSS/GAMING_SESSION writes. Routed to its own `@realityCheckLimit`
- * alias instead so `@setLimit` only ever holds this screen's calls.
- */
 Cypress.Commands.add(
   'stubSetLimit',
   (overrides: { statusCode?: number } = {}) => {
@@ -532,52 +463,6 @@ Cypress.Commands.add(
   },
 )
 
-/**
- * The calls that fire globally the instant `isLoggedIn` flips true —
- * regardless of *how* it got there (a real login, or `visitAsLoggedInUser`
- * skipping straight past one) or which page it happens on — that a
- * `cy.visit()`-only shortcut would otherwise leave hitting the real dev
- * API, all wired into providers mounted unconditionally in
- * `AppProviders.js`:
- * - `AuthProvider`'s `useWalletQuery({ enabled: !!isLoggedIn })` →
- *   `GET /wallet`.
- * - `AuthProvider`'s `useVault`'s `getUserActiveVault`/`getUserClaimedVault`
- *   → `GET /player-rewards/...`.
- * - `PaymentsProvider`'s `getRollbackWithdrawalSettings` (only when
- *   `storageService`'s cached `rollbackSettings` is empty, which it always
- *   is on a fresh fake session) → `GET /settings`.
- * - `SmarticoProvider`'s identity hand-off (`assignUserIdentity`,
- *   `smarticoUtils.js`) → `GET /smartico/players/hash`.
- * - `POST /auth/refresh-token`, as a safety net — `coreApi.ts`'s 401
- *   interceptor would otherwise clear the fake session and bounce to
- *   `/login/` the moment anything else 401s.
- *
- * `GET /bff/limit/active` is `Layout`'s own
- * `useLimitUsage({ enabled: isLoggedIn })` (`@repo/my-account`) — a
- * different endpoint from `stubSetLimit`'s `/limit` POST/PUT.
- *
- * Also stubbed, for the same reason (fired by other `Layout`-mounted
- * compliance/deposit widgets the instant `isLoggedIn` is true, regardless of
- * the RG screen this suite actually cares about):
- * - `RiskMatrixModal` (`organisms/layout/index.js`) → `GET /rg-risk-review`,
- *   whenever `localStorage`'s `hasCheckedRiskReview` isn't set — always true
- *   on a fresh fake session.
- * - `SOWModal` (same Layout) → `GET /players/kyc/documents/pending`.
- * - the deposit widget's `useDepositPrerequisites`
- *   (`modules/deposit/src/hooks/use-deposit-prerequisites.hook.ts`) →
- *   `GET /player/bank-accounts` and `GET /payments/player/deposit-options/`.
- * - the header's own notification check (`organisms/header/index.js`) →
- *   `GET /user/user-notification`, 5s after mount, whenever
- *   `localStorage`'s `notification` isn't set — stubbed as a bare 204: a
- *   real 200 with any truthy body pops the notification modal open
- *   (`response.ok && response.data` is the only guard, `header/index.js`),
- *   which would sit on top of the RG screen this suite is testing.
- *
- * None of this overlaps `stubLogin` — that one covers a real
- * `POST /auth/login`'s aftermath (`/user`, `/intercom/token`, ...), none of
- * which fire on this bootstrap path (see `visitAsLoggedInUser`'s doc for
- * why).
- */
 Cypress.Commands.add('stubActiveSession', () => {
   cy.intercept('GET', '**/limit', { data: [] })
   cy.intercept('GET', '**/bff/limit/active', { data: [] })
@@ -609,23 +494,6 @@ Cypress.Commands.add('stubActiveSession', () => {
   })
 })
 
-/**
- * Skips the real login/registration UI entirely by seeding the same
- * `localStorage`/cookie a successful one leaves behind, then visiting
- * straight into an already-authenticated page load —
- * `authProvider.js`'s mount effect reads `@kto:access_token`/`@kto:user`
- * (`storageService.getAccessToken`/`getUser`) *synchronously off
- * `localStorage`*, sets `user` state directly, and only *arms* a 5-minute
- * `fetchUser` interval — no `GET /user` (or any network call at all) is
- * needed for `isLoggedIn` to become `true`. `cookiePrefix` is `@kto:`
- * (`GATSBY_COOKIE_PREFIX`) in every env this suite can point at.
- * `token1` (`SESSION_COOKIE_NAME`) is set for parity with a real login even
- * though nothing currently reads it as an `isLoggedIn` condition.
- *
- * Pair with `stubActiveSession()` first — the moment `isLoggedIn` flips,
- * `AuthProvider` fires calls of its own that need stubbing regardless of
- * which page this lands on.
- */
 Cypress.Commands.add(
   'visitAsLoggedInUser',
   (path: string, user: Record<string, unknown> = {}) => {
@@ -643,9 +511,6 @@ Cypress.Commands.add(
               active: false,
               currency: { symbol: 'R$', short_code: 'BRL' },
             },
-            // `smarticoUtils.js`'s `assignUserIdentity` reads
-            // `user.user_language.urlCode` unconditionally if the identity
-            // hand-off ever runs — present so that doesn't throw.
             user_language: { urlCode: 'pt-BR' },
             ...user,
           }),
@@ -822,7 +687,6 @@ declare global {
       }): Chainable<null>
       stubSetLimit(overrides?: { statusCode?: number }): Chainable<null>
       stubActiveSession(): Chainable<null>
-      /** Bootstraps an already-logged-in session via localStorage, then visits `path`. Pair with `stubActiveSession()`. */
       visitAsLoggedInUser(
         path: string,
         user?: Record<string, unknown>,
