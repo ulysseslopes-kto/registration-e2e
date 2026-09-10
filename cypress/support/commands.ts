@@ -33,18 +33,15 @@ Cypress.Commands.add(
   },
 )
 
-/**
- * Lets the real GrowthBook features response through and patches exactly one
- * key on the way past — everything else stays whatever is actually live.
- * Unlike `stubGrowthbookFeatures` (which replaces the whole response with the
- * fixture), this is for an integrated spec that needs one flag pinned for
- * determinism — e.g. which UI variant renders — without giving up real flags
- * for everything else. Call before `cy.visit()`.
- */
+let growthbookFeatureOverrides: Record<string, unknown> = {}
+Cypress.on('test:before:run', () => {
+  growthbookFeatureOverrides = {}
+})
 Cypress.Commands.add('overrideGrowthbookFeature', (key: string, value: unknown) => {
+  growthbookFeatureOverrides[key] = value
   cy.intercept('GET', '**/api/features/**', (req) => {
     req.continue((res) => {
-      res.body.features[key] = value
+      Object.assign(res.body.features, growthbookFeatureOverrides)
       res.send(res.body)
     })
   }).as('growthbookFeatures')
@@ -410,6 +407,120 @@ Cypress.Commands.add(
   },
 )
 
+Cypress.Commands.add(
+  'stubActivationSteps',
+  (
+    overrides: {
+      active?: boolean
+      nextStep?: string | null
+      steps?: Array<{ step: string; completed: boolean }>
+      statusCode?: number
+    } = {},
+  ) => {
+    const {
+      statusCode = 200,
+      active = false,
+      nextStep = 'rg',
+      steps = nextStep ? [{ step: nextStep, completed: false }] : [],
+    } = overrides
+    cy.intercept('GET', '**/activation/steps', {
+      statusCode,
+      body: { data: { active, nextStep, steps } },
+    }).as('activationSteps')
+  },
+)
+
+Cypress.Commands.add(
+  'stubLimitPeriods',
+  (
+    overrides: {
+      periods?: Array<{ id: number; name: string; duration: number }>
+      statusCode?: number
+    } = {},
+  ) => {
+    const {
+      statusCode = 200,
+      periods = [{ id: 1, name: 'Daily', duration: 24 }],
+    } = overrides
+    cy.intercept('GET', '**/limit/period', {
+      statusCode,
+      body: { data: periods },
+    }).as('limitPeriods')
+  },
+)
+
+Cypress.Commands.add(
+  'stubSetLimit',
+  (overrides: { statusCode?: number } = {}) => {
+    const { statusCode = 200 } = overrides
+    cy.intercept('POST', '**/limit', (req) => {
+      req.alias = req.body?.type === 'REALITY_CHECK' ? 'realityCheckLimit' : 'setLimit'
+      req.reply({ statusCode, body: {} })
+    })
+    cy.intercept('PUT', '**/limit/*', { statusCode, body: {} }).as(
+      'updateLimit',
+    )
+  },
+)
+
+Cypress.Commands.add('stubActiveSession', () => {
+  cy.intercept('GET', '**/limit', { data: [] })
+  cy.intercept('GET', '**/bff/limit/active', { data: [] })
+  cy.intercept('GET', '**/player-rewards/**', { data: [] })
+  cy.intercept('GET', '**/wallet', {
+    data: {
+      active: false,
+      currency: { symbol: 'R$', short_code: 'BRL' },
+    },
+  })
+  cy.intercept('GET', '**/settings', { data: { withdrawal_rollback: false } })
+  cy.intercept('GET', '**/smartico/players/hash', {
+    data: 'e2e-smartico-hash',
+  })
+  cy.intercept('GET', '**/rg-risk-review', {
+    data: { has_pending_review: false },
+  })
+  cy.intercept('GET', '**/players/kyc/documents/pending', { data: [] })
+  cy.intercept('GET', '**/player/bank-accounts', {
+    data: { activeAccounts: [], inactiveAccounts: [] },
+  })
+  cy.intercept('GET', '**/payments/player/deposit-options/', { data: [] })
+  cy.intercept('GET', '**/user/user-notification', {
+    statusCode: 204,
+    body: '',
+  })
+  cy.intercept('POST', '**/auth/refresh-token', {
+    data: { access_token: 'e2e-token', refresh_token: 'e2e-refresh' },
+  })
+})
+
+Cypress.Commands.add(
+  'visitAsLoggedInUser',
+  (path: string, user: Record<string, unknown> = {}) => {
+    cy.visit(path, {
+      onBeforeLoad(win) {
+        win.localStorage.setItem('@kto:access_token', 'e2e-token')
+        win.localStorage.setItem('@kto:refresh_token', 'e2e-refresh')
+        win.localStorage.setItem(
+          '@kto:user',
+          JSON.stringify({
+            id: 'e2e-user',
+            email: 'e2e-test@example.com',
+            first_name: 'E2E',
+            wallet: {
+              active: false,
+              currency: { symbol: 'R$', short_code: 'BRL' },
+            },
+            user_language: { urlCode: 'pt-BR' },
+            ...user,
+          }),
+        )
+        win.document.cookie = 'token1=e2e-session; path=/'
+      },
+    })
+  },
+)
+
 // --- Step interactions ---
 // Each assumes its backend stub (above) is already set up when the step
 // makes a network call, and that the step is already on screen.
@@ -564,6 +675,22 @@ declare global {
         statusCode?: number
         body?: Record<string, unknown>
       }): Chainable<null>
+      stubActivationSteps(overrides?: {
+        active?: boolean
+        nextStep?: string | null
+        steps?: Array<{ step: string; completed: boolean }>
+        statusCode?: number
+      }): Chainable<null>
+      stubLimitPeriods(overrides?: {
+        periods?: Array<{ id: number; name: string; duration: number }>
+        statusCode?: number
+      }): Chainable<null>
+      stubSetLimit(overrides?: { statusCode?: number }): Chainable<null>
+      stubActiveSession(): Chainable<null>
+      visitAsLoggedInUser(
+        path: string,
+        user?: Record<string, unknown>,
+      ): Chainable<JQuery<HTMLElement>>
       fillCpfStep(
         cpf?: string,
         options?: { acceptAll?: boolean },
