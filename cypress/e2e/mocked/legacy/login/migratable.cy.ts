@@ -54,6 +54,8 @@
  * `{ isMigratable: false, userData: {} }`, so `onSubmit` falls through to a
  * normal `doLogin` rather than blocking the user.
  */
+import { MIGRATABLE_USER_DATA } from '../../../../support/fixtures'
+
 describe('Legacy login — migratable flow (full registration)', () => {
   const LEGACY_FLOW = {
     fe_igp_registration_new_ui_experience: { defaultValue: false },
@@ -69,26 +71,6 @@ describe('Legacy login — migratable flow (full registration)', () => {
         activation_phase: [],
       },
     },
-  }
-
-  /**
-   * A real capture of a migratable `POST /registration/user/is-migrateable`
-   * response — an existing account's data to carry into the modal, including
-   * the `state`/`city`/`address` the address step prefills from (file
-   * header).
-   */
-  const MIGRATABLE_USER_DATA = {
-    migrateable: true,
-    hasBalance: true,
-    isSelfExcluded: null,
-    selfExclusionEndDate: null,
-    nationalId: '01564721043',
-    phone: '51988888888',
-    phonePrefix: '+55',
-    state: 'Rio Grande do Sul',
-    city: 'Santa Cruz do Sul',
-    address: '123',
-    zipCode: null,
   }
 
   const submitLoginForm = (username: string, password = 'Sup3rSecret!23') => {

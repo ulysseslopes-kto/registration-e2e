@@ -50,6 +50,8 @@
  * own `state`/`city`/`address` once the real `country/{id}/regions`/`city`
  * lookups it validates those names against resolve.
  */
+import { MIGRATABLE_USER_DATA } from '../../../../support/fixtures'
+
 describe('New login — migratable flow (full registration)', () => {
   const LEGACY_MODAL_FLOW = {
     registration_new_flow: { defaultValue: true },
@@ -64,24 +66,6 @@ describe('New login — migratable flow (full registration)', () => {
         activation_phase: [],
       },
     },
-  }
-
-  /**
-   * Same real capture of a migratable `POST /registration/user/is-migrateable`
-   * response used by the legacy flow's equivalent — see the file header.
-   */
-  const MIGRATABLE_USER_DATA = {
-    migrateable: true,
-    hasBalance: true,
-    isSelfExcluded: null,
-    selfExclusionEndDate: null,
-    nationalId: '01564721043',
-    phone: '51988888888',
-    phonePrefix: '+55',
-    state: 'Rio Grande do Sul',
-    city: 'Santa Cruz do Sul',
-    address: '123',
-    zipCode: null,
   }
 
   const submitLoginForm = (username: string, password = 'Sup3rSecret!23') => {
