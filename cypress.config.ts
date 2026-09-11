@@ -146,7 +146,17 @@ function resolveTarget(): {
  * written data is strictly worse.
  */
 function assertIntegratedEnv(env: Record<string, string>): void {
-  const required = ['testCpf', 'flowPassword', 'testSupportKey'] as const
+  // `kycTestSupportKey` is as required as the player-service one: without it
+  // the teardown cleans only half the identity, leaving a KycPlayer holding
+  // the CPF. That does not fail the run that caused it — it fails the NEXT
+  // registration with that CPF, in another service, with an error that names
+  // the new player id. Cheaper to refuse to start.
+  const required = [
+    'testCpf',
+    'flowPassword',
+    'testSupportKey',
+    'kycTestSupportKey',
+  ] as const
   const missing = required.filter((key) => !env[key])
   if (missing.length > 0) {
     fail(
@@ -199,7 +209,8 @@ export default defineConfig({
       // One line saying exactly what this run is pointed at — cheap insurance
       // against discovering afterwards that it ran against the wrong thing.
       // Secrets are reported as present/absent, never printed.
-      const secrets = config.env.testSupportKey ? 'set' : 'unset'
+      const playerKey = config.env.testSupportKey ? 'set' : 'unset'
+      const kycKey = config.env.kycTestSupportKey ? 'set' : 'unset'
       const vpn =
         target.needsVpn || mode === 'integrated'
           ? '  (requires VPN — without it the gateway answers 403)'
@@ -209,7 +220,7 @@ export default defineConfig({
           `\n▸ mode: ${mode}` +
           (mode === 'integrated'
             ? `\n▸ BE: ${config.env.apiUrl} (UI) + ${config.env.internalApi} (test-support, requires VPN)` +
-              `\n▸ test-support key: ${secrets}`
+              `\n▸ test-support keys: player=${playerKey} kyc=${kycKey}`
             : '\n▸ BE: intercepted (no real business call)') +
           '\n',
       )
