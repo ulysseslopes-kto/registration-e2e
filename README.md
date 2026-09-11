@@ -409,6 +409,7 @@ one, which is the only place `/test-support/**` is routed (confirmed in
 ```
 browser (UI)  ->  api.kto-dev.com            cpf-checks/v4, registration/v4, auth/login, …
 cy.request    ->  boapi.kto-dev.com/player   test-support: recycle, seeds  (VPN required)
+cy.request    ->  boapi.kto-dev.com/kyc      test-support: recycle, KYC side (VPN required)
 cy.request    ->  api.kto-dev.com            registration/email/mark-verified (no VPN)
 ```
 
@@ -443,15 +444,39 @@ guard 02 of `flow-1n-registration-guards`).
 ### Test identity, and cleaning up after it
 
 One fixed CPF (`FLOW_TEST_CPF`) with epoch-derived e-mail and mobile, recycled
-between runs — `cy.recyclePlayer()`, i.e. `DELETE
-/test-support/players/{nationalId}`. Same scheme as the Bruno flows, with two
+between runs — `cy.recyclePlayer()`. Same scheme as the Bruno flows, with two
 differences that come from Cypress rather than Bruno:
 
+- **Two services, one call.** A registration writes the CPF in *two* places,
+  so freeing it takes two calls, and `cy.recyclePlayer()` makes both:
+
+  ```
+  DELETE boapi.kto-dev.com/player/test-support/players/{cpf}   X-Test-Support-Key
+  DELETE boapi.kto-dev.com/kyc/test-support/players/{cpf}      X-Test-Support-Key (kyc's own)
+  ```
+
+  The player-service half is the one people know. The KYC half is not
+  optional: `kyc_players` is keyed by `player_id` and has a partial unique
+  index on `national_id` (`ux_kyc_players_national_id`), so a surviving
+  KycPlayer keeps holding the CPF. The registration Kafka consumer then tries
+  to INSERT a KycPlayer for the *new* player id, dies on the duplicate key,
+  and nothing retries it — so the new account never gets a KycPlayer and its
+  first KYC/activation call fails with `Can't find KycPlayer by
+  id={newPlayerId}`. The error names the new account; the cause is the old
+  one. Recycling only the player side (by hand, by curl, or by a command that
+  forgot the second call) is what produces that.
+
+  There is deliberately no player-only command: half a cleanup is worse than
+  none, because it looks done. `cy.recycleKycPlayer()` exists on its own only
+  for a spec that registers twice and has to free the KYC side mid-flow
+  (Bruno's `08-recycle-kyc-midflow`).
 - **Clean before *and* after.** Mocha's `after` does not run when the browser
   crashes or the run is interrupted; Bruno gets away with a single trailing
   `99-cleanup` only because its runner is strictly linear. Pass
   `{ expectClean: true }` on the `beforeEach` call to get a loud log when the
-  identity *was* dirty, i.e. when a previous run died mid-way.
+  identity *was* dirty, i.e. when a previous run died mid-way. Pre-flight also
+  covers what teardown structurally cannot: the KycPlayer is created by a
+  Kafka consumer, so it can land *after* the `after` hook has already run.
 - **Don't parallelise.** Specs inside one `cypress run` are already sequential;
   parallelism only arrives with `--parallel` + Cypress Cloud, so the fix is
   simply never to enable it here. The collision that actually bites is two
@@ -464,12 +489,13 @@ contaminates the environment for everyone. Keep blacklist patterns narrow
 enough to match only this suite's own addresses, the way the Bruno flow uses a
 throwaway domain.
 
-`recyclePlayer` frees the identity; it is not erasure. The backend tombstones
-`national_id`/`email`/`username`/`mobile_number` on the `users` row, closes the
-account, deletes the Keycloak user and removes a leftover pre-registration —
-but the CPF still reached anti-fraud (with the provider's real name/DOB),
-SIGAP, the `PlayerRegisteredEvent` Kafka stream and the service logs, none of
-which any cleanup touches. Worth knowing before choosing which CPF to use.
+`recyclePlayer` frees the identity; it is not erasure. The backends tombstone
+`national_id`/`email`/`username`/`mobile_number` on the `users` row, close the
+account, delete the Keycloak user, remove a leftover pre-registration and
+tombstone `kyc_players.national_id` — but the CPF still reached anti-fraud
+(with the provider's real name/DOB), SIGAP, the `PlayerRegisteredEvent` Kafka
+stream and the service logs, none of which any cleanup touches. Worth knowing
+before choosing which CPF to use.
 
 ### Guards
 
@@ -488,11 +514,20 @@ Before the first run, three things are worth checking on the environment:
    captcha. The `x-kto-automation` header the Bruno flows use is **not** an
    option from the browser: the public gateway's `accessControlAllowHeaders`
    does not list it, so the CORS preflight kills the request.
-2. Is the test-support layer live?
-   `curl -s https://boapi.kto-dev.com/player/v3/api-docs | grep -c test-support`
-   → `1`. Note the account **status** and **lock** seeders live on a separate
-   branch, and kyc-service has its own test-support layer — check both before
-   relying on the sensitive-login scenarios.
+2. Is the test-support layer live? Check **both** services — the recycle needs
+   both, and a missing KYC half is the failure that only shows up on the next
+   run (see "Test identity" below):
+
+   ```
+   curl -s https://boapi.kto-dev.com/player/v3/api-docs | grep -c test-support   # -> 1
+   curl -s https://boapi.kto-dev.com/kyc/v3/api-docs    | grep -c test-support   # -> 1
+   ```
+
+   kyc-service's layer is merged and deployed on dev/stg (KIB-8187, kyc-service
+   PR #237), but `test-support.enabled` is a per-deployment property, so the
+   api-docs check is the only real proof. The account **status** and **lock**
+   seeders, on the other hand, still live on a separate player-service branch —
+   check before relying on the sensitive-login scenarios.
 3. A test CPF that is valid in the anti-fraud provider's sandbox **with
    complete basic data** — a CPF with no name/DOB there makes the
    `/registration/v4` enrichment fail, which looks like a test bug and isn't.
@@ -554,13 +589,21 @@ around cleanup. Declared in both modes, since declaring a command costs nothing
 until it is called.
 
 - `cy.recyclePlayer(nationalId?, { expectClean? })` — frees the test identity
-  for the next run (`DELETE /test-support/players/{nationalId}`). Idempotent,
-  200 even with nothing to recycle, so it is safe to call defensively — and it
-  should be called in `beforeEach` *and* `after`, not just `after`. Yields the
-  backend's report (`userRecycled`, `preRegistrationDeleted`) or `null` when the
-  call failed, in which case it logs loudly instead of failing the test.
+  for the next run, on **both** services: `DELETE
+  /player/test-support/players/{nationalId}` then `DELETE
+  /kyc/test-support/players/{nationalId}`. Both idempotent, 200 even with
+  nothing to recycle, so it is safe to call defensively — and it should be
+  called in `beforeEach` *and* `after`, not just `after`. Yields
+  `{ nationalId, player, kyc }`, where each side is the backend's report
+  (`userRecycled`/`preRegistrationDeleted`, `kycPlayerRecycled`) or `null` when
+  that call failed, in which case it logs loudly instead of failing the test.
   `expectClean: true` logs a warning when the identity *was* dirty on entry,
-  i.e. a previous run died before cleaning up.
+  i.e. a previous run died before cleaning up — or the KYC consumer landed
+  after its teardown.
+- `cy.recycleKycPlayer(nationalId?)` — the KYC half on its own, for a spec that
+  registers twice and has to free the CPF between the two (Bruno's
+  `08-recycle-kyc-midflow`). Normal specs don't need it: `cy.recyclePlayer()`
+  already calls it. There is no player-only counterpart on purpose.
 - `cy.markEmailVerified(email, nationalId?)` — the automation path past e-mail
   verification (`POST /registration/email/mark-verified`, public gateway, no
   VPN). Body is snake_case, matching the backend DTO.
