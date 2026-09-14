@@ -1,16 +1,18 @@
 describe('Registration 2026 — RG limits screen (KIB-8557)', () => {
   const openRgLimitsScreen = () => {
-    cy.visitAsLoggedInUser('/')
+    cy.loginBeforeVisit('/')
     cy.dismissCookieBannerIfVisible()
     cy.wait('@activationSteps', { timeout: 20000 })
     cy.dismissCookieBannerIfVisible()
-    cy.contains('button', 'Ativar conta').click()
+    cy.contains('button', 'Ativar conta', { timeout: 15000 }).click()
     cy.contains('Hora de definir seus limites', { timeout: 15000 }).should(
       'be.visible',
     )
   }
 
-  const rgScreen = () => cy.get('.activation-limits-overlay')
+  // `ACTIVATION_OVERLAY_CLASS` (ActivationStepModal.js) — shared by every
+  // native activation step's portal wrapper, not limits-specific.
+  const rgScreen = () => cy.get('.activation-step-overlay')
 
   const openManualStage = () => {
     openRgLimitsScreen()
@@ -35,7 +37,7 @@ describe('Registration 2026 — RG limits screen (KIB-8557)', () => {
     cy.acceptCookieBanner()
   })
 
-  it('renders the choice stage with the max/manual/dismiss options', () => {
+  it('renders the choice stage with the max/manual/dismiss options, and "Usar limites máximos" sends the exact max-limit payloads for both limit types', () => {
     openRgLimitsScreen()
 
     cy.contains(
@@ -44,10 +46,6 @@ describe('Registration 2026 — RG limits screen (KIB-8557)', () => {
     rgScreen().contains('button', 'Usar limites máximos').should('be.visible')
     rgScreen().contains('button', 'Definir manualmente').should('be.visible')
     rgScreen().contains('Agora não').should('be.visible')
-  })
-
-  it('"Usar limites máximos" sends the exact max-limit payloads for both limit types', () => {
-    openRgLimitsScreen()
 
     cy.dismissCookieBannerIfVisible()
     rgScreen().contains('button', 'Usar limites máximos').click()
@@ -71,14 +69,24 @@ describe('Registration 2026 — RG limits screen (KIB-8557)', () => {
       })
   })
 
-  it('the manual "Outro" path sends the exact typed-value payloads for both limit types', () => {
+  it('a loss value over the max is blocked with a warning, fixing it re-enables Confirm, and the "Outro" path then sends the exact typed-value payloads for both limit types', () => {
     openManualStage()
-
-    chooseOtherOption('activation-limits-loss')
-    cy.get('#activation-limits-loss').type('50000')
 
     chooseOtherOption('activation-limits-playtime')
     cy.get('#activation-limits-playtime').type('60')
+
+    chooseOtherOption('activation-limits-loss')
+    cy.get('#activation-limits-loss').type('50000000')
+
+    cy.contains('O valor não deve exceder 1 bilhão de reais.').should(
+      'be.visible',
+    )
+    rgScreen().contains('button', 'Confirmar meus limites').should('be.disabled')
+
+    cy.get('#activation-limits-loss').clear().type('50000')
+    cy.contains('O valor não deve exceder 1 bilhão de reais.').should(
+      'not.exist',
+    )
 
     cy.dismissCookieBannerIfVisible()
     rgScreen()
@@ -103,29 +111,6 @@ describe('Registration 2026 — RG limits screen (KIB-8557)', () => {
         period_id: '1',
         source: 'ACTIVATION',
       })
-  })
-
-  it('a loss value over the max is blocked with a warning, and fixing it re-enables Confirm', () => {
-    openManualStage()
-
-    chooseOtherOption('activation-limits-playtime')
-    cy.get('#activation-limits-playtime').type('60')
-
-    chooseOtherOption('activation-limits-loss')
-    cy.get('#activation-limits-loss').type('50000000')
-
-    cy.contains('O valor não deve exceder 1 bilhão de reais.').should(
-      'be.visible',
-    )
-    rgScreen().contains('button', 'Confirmar meus limites').should('be.disabled')
-
-    cy.get('#activation-limits-loss').clear().type('50000')
-    cy.contains('O valor não deve exceder 1 bilhão de reais.').should(
-      'not.exist',
-    )
-    rgScreen()
-      .contains('button', 'Confirmar meus limites')
-      .should('not.be.disabled')
   })
 
   it('a low (but valid) value on either field shows the advisory without blocking Confirm', () => {
@@ -204,26 +189,35 @@ describe('Registration 2026 — RG limits screen (KIB-8557)', () => {
     cy.stubGrowthbookFeatures({
       fe_registration_loss_limits_enabled: { defaultValue: false },
     })
-    let call = 0
+    // Not keyed on read *count* — the home page's own redirect chain
+    // (`/` bounces a logged-in user to the sportsbook lobby) remounts the
+    // activation card and re-fires this request multiple times before the
+    // CTA is ever clickable, which starved a `call === 0` counter before it
+    // ever got to the click. `hasClickedCta` only flips once Cypress's own
+    // `.click()` command has resolved, which is strictly after all of that
+    // pre-click remount noise has already settled.
+    let hasClickedCta = false
     cy.intercept('GET', '**/activation/steps', (req) => {
-      const isFirstRead = call === 0
-      call += 1
       req.reply({
         body: {
           data: {
             active: false,
-            nextStep: isFirstRead ? 'rg' : null,
-            steps: isFirstRead ? [{ step: 'rg', completed: false }] : [],
+            nextStep: hasClickedCta ? null : 'rg',
+            steps: hasClickedCta ? [] : [{ step: 'rg', completed: false }],
           },
         },
       })
     }).as('activationSteps')
 
-    cy.visitAsLoggedInUser('/')
+    cy.loginBeforeVisit('/')
     cy.dismissCookieBannerIfVisible()
     cy.wait('@activationSteps', { timeout: 20000 })
     cy.dismissCookieBannerIfVisible()
-    cy.contains('button', 'Ativar conta').click()
+    cy.contains('button', 'Ativar conta', { timeout: 15000 })
+      .click()
+      .then(() => {
+        hasClickedCta = true
+      })
 
     cy.contains('Conta ativada!', { timeout: 15000 }).should('be.visible')
     cy.contains('Hora de definir seus limites').should('not.exist')

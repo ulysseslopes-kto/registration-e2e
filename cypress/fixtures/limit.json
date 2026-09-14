@@ -1,0 +1,56 @@
+{
+  "message": null,
+  "messageCode": null,
+  "data": [
+    {
+      "id": 9409,
+      "period": {
+        "id": 2,
+        "name": "Daily",
+        "duration": 24
+      },
+      "user_id": 999999,
+      "status": "ACTIVE",
+      "type": "GAMING_SESSION",
+      "amount": null,
+      "duration": 1440,
+      "reason": null,
+      "limit_balance": 178,
+      "remaining_limit_balance": 1261,
+      "created_at": "2024-01-01T00:00:00",
+      "updated_at": "2024-01-01T00:00:00"
+    },
+    {
+      "id": 9407,
+      "period": null,
+      "user_id": 999999,
+      "status": "ACTIVE",
+      "type": "REALITY_CHECK",
+      "amount": null,
+      "duration": 10800,
+      "reason": "",
+      "limit_balance": 0,
+      "remaining_limit_balance": 0,
+      "created_at": "2024-01-01T00:00:00",
+      "updated_at": "2024-01-01T00:00:00"
+    },
+    {
+      "id": 9408,
+      "period": {
+        "id": 2,
+        "name": "Daily",
+        "duration": 24
+      },
+      "user_id": 999999,
+      "status": "ACTIVE",
+      "type": "STOP_LOSS",
+      "amount": 10000000,
+      "duration": 1440,
+      "reason": null,
+      "limit_balance": 0,
+      "remaining_limit_balance": 10000000,
+      "created_at": "2024-01-01T00:00:00",
+      "updated_at": "2024-01-01T00:00:00"
+    }
+  ]
+}

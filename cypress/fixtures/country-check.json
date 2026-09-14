@@ -1,0 +1,26 @@
+{
+  "message": null,
+  "messageCode": null,
+  "data": {
+    "id": 31,
+    "name": "Brazil",
+    "active": true,
+    "phone_prefix": "55",
+    "currency_list": [
+      {
+        "currencyId": 1,
+        "name": "Brazilian Real",
+        "short_code": "BRL",
+        "symbol": "R$"
+      }
+    ],
+    "translations": [
+      {
+        "lang": "en",
+        "text": "We are updating the site to give you a new KTO.com experience. KTO will be available soon.Thanks for your patience."
+      }
+    ],
+    "login_blocked": false,
+    "registration_blocked": false
+  }
+}

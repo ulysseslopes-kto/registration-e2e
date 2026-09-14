@@ -1,6 +1,6 @@
 describe('Legacy RG limits screen (pre-KIB-8557 RGLimits)', () => {
   const openLegacyRgScreen = () => {
-    cy.visitAsLoggedInUser('/', { user_status: { name: 'PENDING' } })
+    cy.loginBeforeVisit('/', { user_status: { name: 'PENDING' } })
     cy.dismissCookieBannerIfVisible()
     cy.contains('Escolha como definir seus limites', { timeout: 15000 }).should(
       'be.visible',
@@ -36,9 +36,9 @@ describe('Legacy RG limits screen (pre-KIB-8557 RGLimits)', () => {
     cy.acceptCookieBanner()
   })
 
-  it('renders the choice stage with both methods', () => {
+  it('renders the choice stage with both methods, and "Usar os limites máximos" submits immediately with the exact max-limit payloads (no confirm click, no "source" field)', () => {
     openLegacyRgScreen()
-
+    cy.wait(1000)
     cy.contains(
       'A definição de limites é obrigatória. Escolha como você prefere fazer isso.',
     ).should('be.visible')
@@ -48,10 +48,6 @@ describe('Legacy RG limits screen (pre-KIB-8557 RGLimits)', () => {
     cy.get('#manually-set-card')
       .should('be.visible')
       .and('contain.text', 'Definir limites manualmente')
-  })
-
-  it('"Usar os limites máximos" submits immediately with the exact max-limit payloads (no confirm click, no "source" field)', () => {
-    openLegacyRgScreen()
 
     cy.get('#max-limit-set-card').click()
 
@@ -72,11 +68,22 @@ describe('Legacy RG limits screen (pre-KIB-8557 RGLimits)', () => {
       })
   })
 
-  it('the manual "Outro" path sends the exact typed-value payloads for both limit types', () => {
+  it('a loss value over the max shows the warning and disables the drawer\'s own confirm, and fixing it then sends the exact typed-value payloads for both limit types', () => {
     openManualStage()
 
     chooseOtherOption('Insira um valor')
-    cy.get('#lossLimit-custom').type('50000')
+    cy.get('#lossLimit-custom').type('50000000')
+
+    cy.contains('O valor não deve exceder 1 bilhão de reais.').should(
+      'be.visible',
+    )
+    openDrawer().find('#confirm-custom-value-button').should('be.disabled')
+
+    cy.get('#lossLimit-custom').clear().type('50000')
+    cy.contains('O valor não deve exceder 1 bilhão de reais.').should(
+      'not.exist',
+    )
+    openDrawer().find('#confirm-custom-value-button').should('not.be.disabled')
     confirmCustomValue()
 
     chooseOtherOption('Insira o tempo')
@@ -100,27 +107,6 @@ describe('Legacy RG limits screen (pre-KIB-8557 RGLimits)', () => {
         period_id: '1',
         type: 'GAMING_SESSION',
       })
-  })
-
-  it('a loss value over the max shows the warning and disables the drawer\'s own confirm — the bad value never reaches the form', () => {
-    openManualStage()
-
-    chooseOtherOption('Insira um valor')
-    cy.get('#lossLimit-custom').type('50000000')
-
-    cy.contains('O valor não deve exceder 1 bilhão de reais.').should(
-      'be.visible',
-    )
-    openDrawer().find('#confirm-custom-value-button').should('be.disabled')
-
-    cy.get('#lossLimit-custom').clear().type('50000')
-    cy.contains('O valor não deve exceder 1 bilhão de reais.').should(
-      'not.exist',
-    )
-    openDrawer().find('#confirm-custom-value-button').should('not.be.disabled')
-    confirmCustomValue()
-
-    cy.contains('Insira um valor').should('not.exist')
   })
 
   it('a low (but valid) loss value shows the advisory without blocking the outer Confirm', () => {
