@@ -1,0 +1,9 @@
+{
+  "data": {
+    "activeAccounts": [],
+    "inactiveAccounts": [],
+    "hasAccountsWaitingLiveness": false,
+    "hasAccountsForDeposits": false,
+    "hasAccountsForWithdrawals": false
+  }
+}

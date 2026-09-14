@@ -73,6 +73,9 @@ describe('Legacy registration — full flow (integrated backend)', () => {
   })
 
   it('creates an account end to end against the real backend', () => {
+    cy.overrideGrowthbookFeature('fe_igp_registration_new_ui_experience', {
+      defaultValue: false,
+    })
     // The two deliberate intercepts in this spec — see the file header.
     cy.stubValidateToken()
     cy.stubLegacySmsValidate()
@@ -80,6 +83,12 @@ describe('Legacy registration — full flow (integrated backend)', () => {
     cy.visit('/registro/')
     cy.dismissCookieBannerIfVisible()
     cy.get('#register-form', { timeout: 10000 }).should('exist')
+
+    cy.get('body').then(($body) => {
+      if ($body.find('#national_id').length === 0) {
+        cy.contains('Registrar com o E-mail').click()
+      }
+    })
 
     cy.freshIdentity().then((identity) => {
       cy.get('#national_id').type(identity.cpf)

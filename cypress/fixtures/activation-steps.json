@@ -1,0 +1,26 @@
+{
+  "message": null,
+  "messageCode": null,
+  "data": {
+    "active": false,
+    "nextStep": "rg",
+    "steps": [
+      {
+        "step": "email_verification",
+        "completed": true
+      },
+      {
+        "step": "rg",
+        "completed": false
+      },
+      {
+        "step": "kyc",
+        "completed": true
+      },
+      {
+        "step": "address",
+        "completed": false
+      }
+    ]
+  }
+}

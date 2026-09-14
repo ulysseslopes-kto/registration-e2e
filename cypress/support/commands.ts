@@ -33,18 +33,15 @@ Cypress.Commands.add(
   },
 )
 
-/**
- * Lets the real GrowthBook features response through and patches exactly one
- * key on the way past — everything else stays whatever is actually live.
- * Unlike `stubGrowthbookFeatures` (which replaces the whole response with the
- * fixture), this is for an integrated spec that needs one flag pinned for
- * determinism — e.g. which UI variant renders — without giving up real flags
- * for everything else. Call before `cy.visit()`.
- */
+let growthbookFeatureOverrides: Record<string, unknown> = {}
+Cypress.on('test:before:run', () => {
+  growthbookFeatureOverrides = {}
+})
 Cypress.Commands.add('overrideGrowthbookFeature', (key: string, value: unknown) => {
+  growthbookFeatureOverrides[key] = value
   cy.intercept('GET', '**/api/features/**', (req) => {
     req.continue((res) => {
-      res.body.features[key] = value
+      Object.assign(res.body.features, growthbookFeatureOverrides)
       res.send(res.body)
     })
   }).as('growthbookFeatures')
@@ -108,15 +105,35 @@ Cypress.Commands.add('acceptCookieBanner', () => {
  * page loads, so the post-visit check alone can still miss a banner that
  * shows up later — right before the click is where it's actually been seen
  * covering a submit button.
+ *
+ * By default only the very first call across the whole run pays the 2s wait
+ * below (see `hasWaitedForCookieBanner`) — every call after that, in this
+ * test or any later one, has already had that delay elapse once. Pass
+ * `{ wait: true }` to force it again at a specific call site anyway (e.g.
+ * a long gap since the last check), or `{ wait: false }` to force-skip it
+ * even on that first call.
  */
-Cypress.Commands.add('dismissCookieBannerIfVisible', () => {
-  return cy.get('body').then(($body) => {
-    const $acceptButton = $body.find('#adopt-accept-all-button')
-    if ($acceptButton.length) {
-      cy.wrap($acceptButton).click({ force: true })
+let hasWaitedForCookieBanner = false
+
+Cypress.Commands.add(
+  'dismissCookieBannerIfVisible',
+  (options: { wait?: boolean } = {}) => {
+    // AdOpt injects the banner asynchronously, so checking the DOM the
+    // instant this command runs can miss it mid-render and wrongly no-op —
+    // give it a moment to show up before deciding it isn't there.
+    const shouldWait = options.wait ?? !hasWaitedForCookieBanner
+    if (shouldWait) {
+      hasWaitedForCookieBanner = true
+      cy.wait(500)
     }
-  })
-})
+    return cy.get('body').then(($body) => {
+      const $acceptButton = $body.find('#adopt-accept-all-button')
+      if ($acceptButton.length) {
+        cy.wrap($acceptButton).click({ force: true })
+      }
+    })
+  },
+)
 
 /**
  * Suppress the cookie banner → visit `/registro/` directly. Goes straight to
@@ -410,6 +427,164 @@ Cypress.Commands.add(
   },
 )
 
+Cypress.Commands.add(
+  'stubActivationSteps',
+  (
+    overrides: {
+      active?: boolean
+      nextStep?: string | null
+      steps?: Array<{ step: string; completed: boolean }>
+      statusCode?: number
+    } = {},
+  ) => {
+    const {
+      statusCode = 200,
+      active = false,
+      nextStep = 'rg',
+      steps = nextStep ? [{ step: nextStep, completed: false }] : [],
+    } = overrides
+    cy.intercept('GET', '**/activation/steps', {
+      statusCode,
+      body: { data: { active, nextStep, steps } },
+    }).as('activationSteps')
+  },
+)
+
+Cypress.Commands.add(
+  'stubLimitPeriods',
+  (
+    overrides: {
+      periods?: Array<{ id: number; name: string; duration: number }>
+      statusCode?: number
+    } = {},
+  ) => {
+    const {
+      statusCode = 200,
+      periods = [{ id: 1, name: 'Daily', duration: 24 }],
+    } = overrides
+    cy.intercept('GET', '**/limit/period', {
+      statusCode,
+      body: { data: periods },
+    }).as('limitPeriods')
+  },
+)
+
+Cypress.Commands.add(
+  'stubSetLimit',
+  (overrides: { statusCode?: number } = {}) => {
+    const { statusCode = 200 } = overrides
+    cy.intercept('POST', '**/limit', (req) => {
+      req.alias = req.body?.type === 'REALITY_CHECK' ? 'realityCheckLimit' : 'setLimit'
+      req.reply({ statusCode, body: {} })
+    })
+    cy.intercept('PUT', '**/limit/*', { statusCode, body: {} }).as(
+      'updateLimit',
+    )
+  },
+)
+
+Cypress.Commands.add('stubActiveSession', () => {
+  cy.intercept('GET', '**/limit', { data: [] })
+  cy.intercept('GET', '**/bff/limit/active', { data: [] })
+  cy.intercept('GET', '**/player-rewards/**', { data: [] })
+  cy.intercept('GET', '**/wallet', {
+    data: {
+      active: false,
+      currency: { symbol: 'R$', short_code: 'BRL' },
+    },
+  })
+  cy.intercept('GET', '**/settings', { data: { withdrawal_rollback: false } })
+  cy.intercept('GET', '**/smartico/players/hash', {
+    data: 'e2e-smartico-hash',
+  })
+  cy.intercept('GET', '**/rg-risk-review', {
+    data: { has_pending_review: false },
+  })
+  cy.intercept('GET', '**/players/kyc/documents/pending', { data: [] })
+  cy.intercept('GET', '**/player/bank-accounts', {
+    data: { activeAccounts: [], inactiveAccounts: [] },
+  })
+  cy.intercept('GET', '**/payments/player/deposit-options/', { data: [] })
+  cy.intercept('GET', '**/lobbies/deposit', { data: {} })
+  cy.intercept('GET', '**/user/user-notification', {
+    statusCode: 204,
+    body: '',
+  })
+  cy.intercept('POST', '**/auth/refresh-token', {
+    data: { access_token: 'e2e-token', refresh_token: 'e2e-refresh' },
+  })
+})
+
+Cypress.Commands.add(
+  'loginBeforeVisit',
+  (path: string, user: Record<string, unknown> = {}) => {
+    // Drive the real `/login/` form instead of seeding localStorage directly
+    // — `storageService.setTokens()` (called by the app's own login handler)
+    // is what actually writes `@kto:access_token`/`@kto:refresh_token` and
+    // the `token1` session cookie, so logging in for real reproduces that
+    // state instead of guessing its shape.
+    cy.stubLogin()
+    // Registered after `stubLogin()`'s own `GET **/user` stub, so this one
+    // wins (Cypress matches the most recently defined intercept) — lets
+    // callers shape the logged-in user via `user`, same as before.
+    cy.intercept('GET', '**/user', {
+      data: {
+        id: 'e2e-user',
+        email: 'e2e-test@example.com',
+        first_name: 'E2E',
+        wallet: {
+          active: false,
+          currency: { symbol: 'R$', short_code: 'BRL' },
+        },
+        user_language: { urlCode: 'pt-BR' },
+        ...user,
+      },
+    })
+
+    cy.visit('/login/')
+    cy.dismissCookieBannerIfVisible()
+
+    // Which form renders depends on `fe_igp_registration_new_ui_experience`
+    // — whatever the caller's own `stubGrowthbookFeatures()` already set it
+    // to — so wait for either one's username field instead of assuming the
+    // new flow. Selectors per cypress/e2e/mocked/{new,legacy}/login/login.cy.ts.
+    cy.get('input[autocomplete="username"], #input-new-username', {
+      timeout: 15000,
+    }).then(($username) => {
+      const isLegacyForm = $username.is('#input-new-username')
+
+      if (isLegacyForm) {
+        cy.wrap($username).type('e2e-test@example.com')
+        cy.get('#input-new-password').type('Sup3rSecret!23')
+        cy.dismissCookieBannerIfVisible()
+        // Typing can outrun the form's own async validation — wait for it
+        // to actually enable the button rather than assuming typing alone
+        // was enough by the time this runs.
+        cy.get('#new-login').should('not.be.disabled').click()
+      } else {
+        cy.wrap($username).type('52998224725')
+        cy.get('input[autocomplete="current-password"]').type('Sup3rSecret!23')
+        // AdOpt can re-show the banner with a delay, after the initial
+        // post-visit check already ran clean — check again right before
+        // this click, which is exactly where it's been seen covering it.
+        cy.dismissCookieBannerIfVisible()
+        cy.get('button[type="submit"]').should('not.be.disabled').click()
+      }
+    })
+    cy.wait('@login')
+    // Both login pages navigate away from `/login/` on their own once
+    // `isLoggedIn` flips (e.g. `AuthLandingRoute.js`'s
+    // `useEffect(() => { if (isLoggedIn) navigate('/${sportSlug}/') })`) —
+    // that client-side redirect races the `cy.visit(path)` below, and can
+    // win, landing on the sportsbook lobby instead of `path`. Waiting for it
+    // to actually happen first means our own visit is the last navigation,
+    // so it's the one that sticks.
+    cy.url().should('not.include', '/login')
+
+    cy.visit(path)
+  },
+)
+
 // --- Step interactions ---
 // Each assumes its backend stub (above) is already set up when the step
 // makes a network call, and that the step is already on screen.
@@ -497,7 +672,9 @@ declare global {
       /** See implementation doc above. */
       acceptCookieBanner(): Chainable<JQuery<HTMLElement>>
       /** See implementation doc above. */
-      dismissCookieBannerIfVisible(): Chainable<JQuery<HTMLBodyElement>>
+      dismissCookieBannerIfVisible(options?: {
+        wait?: boolean
+      }): Chainable<JQuery<HTMLBodyElement>>
       /** Home → accept cookies → click the header's register CTA. */
       startRegistration(): Chainable<JQuery<HTMLElement>>
       stubCpfCheck(overrides?: {
@@ -564,6 +741,22 @@ declare global {
         statusCode?: number
         body?: Record<string, unknown>
       }): Chainable<null>
+      stubActivationSteps(overrides?: {
+        active?: boolean
+        nextStep?: string | null
+        steps?: Array<{ step: string; completed: boolean }>
+        statusCode?: number
+      }): Chainable<null>
+      stubLimitPeriods(overrides?: {
+        periods?: Array<{ id: number; name: string; duration: number }>
+        statusCode?: number
+      }): Chainable<null>
+      stubSetLimit(overrides?: { statusCode?: number }): Chainable<null>
+      stubActiveSession(): Chainable<null>
+      loginBeforeVisit(
+        path: string,
+        user?: Record<string, unknown>,
+      ): Chainable<JQuery<HTMLElement>>
       fillCpfStep(
         cpf?: string,
         options?: { acceptAll?: boolean },
