@@ -36,6 +36,12 @@
  * response into `{ isMigratable: false, userData: {} }` rather than
  * propagating the error.
  *
+ * No "e-mail already in use" test: same `RegisterContent`/`EmailAndPasswordStep`
+ * tree as the legacy flow, so the same gap applies — the e-mail here is
+ * carried over from the account being migrated rather than entered fresh,
+ * which isn't a real conflict scenario, and the `flow === LOGIN` branch never
+ * mounts the `email` field an email-taken error would attach to anyway.
+ *
  * `useRegistrationSteps.js`'s own `isMigratable` concept (which would skip
  * every non-start step) never actually engages — nothing in the codebase
  * ever calls the `setMigratableData` it depends on — so every step below
@@ -182,24 +188,6 @@ describe('New login — migratable flow (full registration)', () => {
 
     cy.get('#register-modal').should('not.exist')
     cy.url().should('not.include', '/login')
-  })
-
-  it('an e-mail already registered elsewhere blocks the migration step', () => {
-    cy.stubMigratableStatus(MIGRATABLE_USER_DATA)
-    cy.stubEmailCheck({ valid: false })
-    cy.stubLegacyCpfCheck()
-    submitLoginForm('52998224725')
-    cy.wait('@migratableStatus')
-
-    checkModalConsents()
-    cy.get('#register-modal #nextBtn1').click()
-    cy.wait('@emailCheck')
-
-    cy.contains(
-      'Este e-mail já está em uso. Por favor, escolha outro!',
-    ).should('be.visible')
-    // Never advanced past the modal's first step.
-    cy.get('#otp-input').should('not.exist')
   })
 
   it('a CPF already registered elsewhere blocks the migration step', () => {

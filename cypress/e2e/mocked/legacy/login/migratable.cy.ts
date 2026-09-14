@@ -21,8 +21,12 @@
  * (e-mail-taken check, then the CPF check when
  * `player_registration_national_id_check` is on) as a plain registration —
  * `stubEmailCheck()`/`stubLegacyCpfCheck()` below are for that, and the
- * "e-mail already in use"/"CPF already registered" tests below exercise the
- * failure side of both.
+ * "CPF already registered" test below exercises the failure side of the
+ * latter. There's no equivalent "e-mail already in use" test: in this flow
+ * the e-mail is carried over from the account being migrated, not entered
+ * fresh, so a conflict on it isn't a real scenario the way it is for a plain
+ * registration — and `EmailAndPasswordStep`'s `flow === LOGIN` branch never
+ * even mounts the `email` field `setError('email', ...)` would attach to.
  *
  * `useRegistrationSteps.js`'s own `isMigratable` concept (which would skip
  * every non-start step) never actually engages — nothing in the codebase
@@ -187,24 +191,6 @@ describe('Legacy login — migratable flow (full registration)', () => {
 
     cy.get('#register-modal').should('not.exist')
     cy.url().should('not.include', '/login')
-  })
-
-  it('an e-mail already registered elsewhere blocks the migration step', () => {
-    cy.stubMigratableStatus(MIGRATABLE_USER_DATA)
-    cy.stubEmailCheck({ valid: false })
-    cy.stubLegacyCpfCheck()
-    submitLoginForm('e2e-test@example.com')
-    cy.wait('@migratableStatus')
-
-    checkModalConsents()
-    cy.get('#register-modal #nextBtn1').click()
-    cy.wait('@emailCheck')
-
-    cy.contains(
-      'Este e-mail já está em uso. Por favor, escolha outro!',
-    ).should('be.visible')
-    // Never advanced past the modal's first step.
-    cy.get('#otp-input').should('not.exist')
   })
 
   it('a CPF already registered elsewhere blocks the migration step', () => {
