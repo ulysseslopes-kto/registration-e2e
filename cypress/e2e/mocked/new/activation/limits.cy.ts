@@ -1,6 +1,16 @@
 describe('Registration 2026 — RG limits screen (KIB-8557)', () => {
   const openRgLimitsScreen = () => {
     cy.loginBeforeVisit('/')
+    // Future-proofing: RG-step visibility here is driven entirely by the
+    // separately-mocked `/activation/steps` response, not by `/limit` data,
+    // so `stubActiveSession()`/`stubLogin()`'s now-populated `/limit`
+    // default (`limit.json`, an already-fully-configured user) has no
+    // effect today — but this suite is still specifically about "the user
+    // has no limits set yet", so keep it explicit rather than relying on
+    // that gating detail never changing. Registered after both, so it wins.
+    cy.fixture('limit-empty.json').then((body) => {
+      cy.intercept('GET', '**/limit', body)
+    })
     cy.dismissCookieBannerIfVisible()
     cy.wait('@activationSteps', { timeout: 20000 })
     cy.dismissCookieBannerIfVisible()
@@ -210,6 +220,10 @@ describe('Registration 2026 — RG limits screen (KIB-8557)', () => {
     }).as('activationSteps')
 
     cy.loginBeforeVisit('/')
+    // Same "no limits set yet" premise as `openRgLimitsScreen` — see there.
+    cy.fixture('limit-empty.json').then((body) => {
+      cy.intercept('GET', '**/limit', body)
+    })
     cy.dismissCookieBannerIfVisible()
     cy.wait('@activationSteps', { timeout: 20000 })
     cy.dismissCookieBannerIfVisible()

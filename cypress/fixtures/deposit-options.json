@@ -1,0 +1,9 @@
+{
+  "message": null,
+  "messageCode": null,
+  "data": {
+    "isFirstDeposit": true,
+    "hasEligibleBankAccount": false,
+    "isPingPixFlowEnabled": false
+  }
+}

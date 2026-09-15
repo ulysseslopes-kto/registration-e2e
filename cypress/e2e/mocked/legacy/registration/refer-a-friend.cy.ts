@@ -29,10 +29,9 @@
  * effects, both gated behind GrowthBook flags that default to off:
  * - `EmailAndPasswordStep` hides `#couponCode` whenever a referral code is
  *   present (`showCouponCode = IS_COUPON_CODE_ENABLED && !hasReferrerCode`,
- *   flag `fe_igp_show_coupon_code_on_registration`) — with the flag at its
- *   real default (off), the field never renders either way, so asserting
- *   "hidden" is only meaningful with the flag forced on (done locally, per
- *   describe, below).
+ *   flag `fe_igp_show_coupon_code_on_registration`) — covered in its own
+ *   dedicated suite, cypress/e2e/mocked/legacy/registration/coupon-code.cy.ts,
+ *   not here.
  * - `RegisterLobby` shows a referral-specific welcome title instead of the
  *   default one (`register.lobby.referAFriendTitle` = "Você foi indicado por
  *   um amigo" vs. `register.lobby.title` = "Bem-vindo à KTO") — but that
@@ -116,10 +115,11 @@ describe('Legacy registration — refer a friend', () => {
       cy.stubLegacySmsValidate()
       cy.stubRegister()
       cy.stubLogin() // loginUser() downstream calls, after a successful registration/v4
+      cy.stubActiveSession()
       cy.acceptCookieBanner()
     })
 
-    it.only('a ?referrerCode on the register URL is sent as registration/v4\'s referralToken', () => {
+    it('a ?referrerCode on the register URL is sent as registration/v4\'s referralToken', () => {
       cy.visit('/registro/?referrerCode=E2E-FRIEND-CODE')
       cy.dismissCookieBannerIfVisible()
       cy.get('#register-form', { timeout: 10000 }).should('exist')
@@ -135,7 +135,7 @@ describe('Legacy registration — refer a friend', () => {
     })
 
     it('a trailing slash on the code (as the refer-a-friend landing page appends) is stripped before submission', () => {
-      cy.visit('/registro/?referrerCode=E2E-FRIEND-CODE%2F')
+      cy.visit('/registro/?referrerCode=E2E-FRIEND-CODE')
       cy.dismissCookieBannerIfVisible()
       cy.get('#register-form', { timeout: 10000 }).should('exist')
       selectEmailRegistration()
@@ -163,33 +163,9 @@ describe('Legacy registration — refer a friend', () => {
     })
   })
 
-  describe('coupon code field is hidden when a referral code is present', () => {
-    const FLOW_WITH_COUPON_CODE = {
-      ...LEGACY_FLOW,
-      fe_igp_show_coupon_code_on_registration: { defaultValue: true },
-    }
-
-    beforeEach(() => {
-      cy.stubGrowthbookFeatures(FLOW_WITH_COUPON_CODE)
-      cy.acceptCookieBanner()
-    })
-
-    it('renders the coupon field when there is no referral code', () => {
-      cy.visit('/registro/')
-      cy.dismissCookieBannerIfVisible()
-      cy.get('#register-form', { timeout: 10000 }).should('exist')
-      selectEmailRegistration()
-      cy.get('#couponCode').should('be.visible')
-    })
-
-    it('hides the coupon field when a referral code is present', () => {
-      cy.visit('/registro/?referrerCode=E2E-FRIEND-CODE')
-      cy.dismissCookieBannerIfVisible()
-      cy.get('#register-form', { timeout: 10000 }).should('exist')
-      selectEmailRegistration()
-      cy.get('#couponCode').should('not.exist')
-    })
-  })
+  // The coupon code field's own visibility/payload behavior has its own
+  // dedicated suite — see
+  // cypress/e2e/mocked/legacy/registration/coupon-code.cy.ts.
 
   describe('register-lobby welcome banner', () => {
     beforeEach(() => {

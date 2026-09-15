@@ -94,6 +94,7 @@ describe('Legacy login — migratable flow (full registration)', () => {
 
   beforeEach(() => {
     cy.stubGrowthbookFeatures(LEGACY_FLOW)
+    cy.stubActiveSession()
     cy.acceptCookieBanner()
     cy.visit('/login/')
     cy.dismissCookieBannerIfVisible()

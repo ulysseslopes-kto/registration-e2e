@@ -136,6 +136,11 @@ beforeEach(() => {
   // Any method, any path — GTM's own script/container fetch, same
   // "irrelevant to what's under test" story as the analytics beacons above.
   cy.intercept('**www.googletagmanager.com/**', { statusCode: 200, body: {} })
+  // Any method, any path, any subdomain — Smartico's gamification/loyalty
+  // widget script and its own real-time calls, irrelevant to what's under
+  // test here (distinct from our own backend's `**/smartico/players/hash`
+  // proxy endpoint, which `stubActiveSession()` already covers).
+  cy.intercept('**smartico**', { statusCode: 200, body: {} })
   cy.intercept( 'GET', '**/country/registration-dropdown', REGISTRATION_DROPDOWN_RESPONSE)
   cy.intercept('GET', '**/country/register', REGISTER_COUNTRIES_RESPONSE)
   // The login screen's migratable-status check (`getMigrateableStatus`,
@@ -153,14 +158,8 @@ beforeEach(() => {
   // with everything already accepted/verified means none of those decide
   // there's something pending and open their own modal on top of whatever
   // screen a spec is actually testing.
-  cy.intercept('GET', '**/user/required-data', {
-    data: {
-      acceptTc: true,
-      acceptPp: true,
-      emailVerified: true,
-      mobileVerified: true,
-      mustResetPasswordAndLiveness: false,
-    },
+  cy.fixture('required-data.json').then((body) => {
+    cy.intercept('GET', '**/user/required-data', body)
   })
   // `getTopEvents()` (packages/core-api/src/adapters/sportsbook/top-events.api.ts)
   // — a lobby "trending events" widget call, unwrapped (`hasNestedData: false`)
@@ -187,4 +186,9 @@ beforeEach(() => {
     number: 0,
     empty: true,
   })
+  // `GET /bff/limit/active` — the active-limits check most logged-in pages
+  // fire regardless of what's under test (already in `stubActiveSession()`
+  // for specs that opt into it; global here too so a spec that doesn't call
+  // that command still never hits the real backend for it).
+  cy.intercept('GET', '**/bff/limit/active', { data: [] })
 })

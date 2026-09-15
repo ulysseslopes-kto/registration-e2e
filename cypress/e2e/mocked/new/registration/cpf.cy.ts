@@ -113,4 +113,7 @@ describe('Account create — CPF step', () => {
     cy.wait('@slowCpfCheck')
     cy.get('input[type="password"]').should('be.visible')
   })
+
+  // The CPF step's coupon/promo code field (KIB-9237) has its own dedicated
+  // suite — see cypress/e2e/mocked/new/registration/coupon-code.cy.ts.
 })
