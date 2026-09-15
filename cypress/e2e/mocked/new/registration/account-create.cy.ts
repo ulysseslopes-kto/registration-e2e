@@ -68,4 +68,8 @@ describe('Account create — full flow (mocked backend)', () => {
     cy.wait('@register')
     cy.contains('Criando sua conta').should('be.visible')
   })
+
+  // The CPF step's coupon/promo code field (KIB-9237) and its effect on this
+  // same final payload have their own dedicated suite — see
+  // cypress/e2e/mocked/new/registration/coupon-code.cy.ts.
 })

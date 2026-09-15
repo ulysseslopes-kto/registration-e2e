@@ -105,6 +105,8 @@ describe('Registration 2026 — refer a friend', () => {
       cy.stubSendToken()
       cy.stubValidateToken()
       cy.stubRegister()
+      cy.stubActivationSteps()
+      cy.stubActiveSession()
     })
 
     it('is sent as registration/v4\'s referralToken once continued past the landing screen', () => {

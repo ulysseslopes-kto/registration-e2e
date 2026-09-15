@@ -404,16 +404,20 @@ Cypress.Commands.add(
         wallet: { active: false },
       },
     }).as('getUser')
-    cy.intercept('GET', '**/limit', { data: [] }).as('getLimits')
-    cy.intercept('POST', '**/intercom/token', { data: 'e2e-intercom-token' }).as(
-      'intercomToken',
-    )
-    cy.intercept('GET', '**/user-activity-fact/deposit-info', {
-      data: { hasFirstTimeDeposit: false },
-    }).as('depositInfo')
-    cy.intercept('GET', '**/sportsbook/token', { token: 'e2e-kambi-token' }).as(
-      'kambiToken',
-    )
+    cy.fixture('limit.json').then((body) => {
+      cy.intercept('GET', '**/limit', body).as('getLimits')
+    })
+    cy.fixture('intercom-token.json').then((body) => {
+      cy.intercept('POST', '**/intercom/token', body).as('intercomToken')
+    })
+    cy.fixture('deposit-info.json').then((body) => {
+      cy.intercept('GET', '**/user-activity-fact/deposit-info', body).as(
+        'depositInfo',
+      )
+    })
+    cy.fixture('sportsbook-token.json').then((body) => {
+      cy.intercept('GET', '**/sportsbook/token', body).as('kambiToken')
+    })
   },
 )
 
@@ -483,35 +487,80 @@ Cypress.Commands.add(
   },
 )
 
+// Everything a logged-in session's pages fire off in the background,
+// regardless of how that session was reached (`loginBeforeVisit`, the
+// legacy/new login forms directly, or landing already-logged-in via
+// `onBeforeLoad`-seeded storage) — one command so no caller has to guess
+// which of these a given screen actually needs. Every response comes from a
+// fixture (captured from a real account, PII swapped for synthetic values —
+// see each fixture's own content) rather than an inline literal, `GET
+// **/user/user-notification` excepted: it's a genuine `204 No Content`, so
+// there's no body to put in a file.
+//
 Cypress.Commands.add('stubActiveSession', () => {
-  cy.intercept('GET', '**/limit', { data: [] })
-  cy.intercept('GET', '**/bff/limit/active', { data: [] })
-  cy.intercept('GET', '**/player-rewards/**', { data: [] })
-  cy.intercept('GET', '**/wallet', {
-    data: {
-      active: false,
-      currency: { symbol: 'R$', short_code: 'BRL' },
-    },
+  cy.fixture('limit.json').then((body) => {
+    cy.intercept('GET', '**/limit', body)
   })
-  cy.intercept('GET', '**/settings', { data: { withdrawal_rollback: false } })
-  cy.intercept('GET', '**/smartico/players/hash', {
-    data: 'e2e-smartico-hash',
+  cy.fixture('limit-active.json').then((body) => {
+    cy.intercept('GET', '**/bff/limit/active', body)
   })
-  cy.intercept('GET', '**/rg-risk-review', {
-    data: { has_pending_review: false },
+  cy.fixture('player-rewards.json').then((body) => {
+    cy.intercept('GET', '**/player-rewards/**', body)
   })
-  cy.intercept('GET', '**/players/kyc/documents/pending', { data: [] })
-  cy.intercept('GET', '**/player/bank-accounts', {
-    data: { activeAccounts: [], inactiveAccounts: [] },
+  cy.fixture('player-rewards-active.json').then((body) => {
+    cy.intercept('GET', '**/player-rewards/active', body)
   })
-  cy.intercept('GET', '**/payments/player/deposit-options/', { data: [] })
-  cy.intercept('GET', '**/lobbies/deposit', { data: {} })
+  cy.fixture('wallet.json').then((body) => {
+    cy.intercept('GET', '**/wallet', body)
+  })
+  cy.fixture('settings.json').then((body) => {
+    cy.intercept('GET', '**/settings', body)
+  })
+  cy.fixture('smartico-hash.json').then((body) => {
+    cy.intercept('GET', '**/smartico/players/hash', body)
+  })
+  cy.fixture('rg-risk-review.json').then((body) => {
+    cy.intercept('GET', '**/rg-risk-review', body)
+  })
+  cy.fixture('kyc-documents-pending.json').then((body) => {
+    cy.intercept('GET', '**/players/kyc/documents/pending', body)
+  })
+  cy.fixture('bank-accounts.json').then((body) => {
+    cy.intercept('GET', '**/player/bank-accounts', body)
+  })
+  cy.fixture('deposit-options.json').then((body) => {
+    cy.intercept('GET', '**/payments/player/deposit-options/', body)
+  })
+  cy.fixture('lobbies-deposit.json').then((body) => {
+    cy.intercept('GET', '**/lobbies/deposit', body)
+  })
   cy.intercept('GET', '**/user/user-notification', {
     statusCode: 204,
     body: '',
   })
-  cy.intercept('POST', '**/auth/refresh-token', {
-    data: { access_token: 'e2e-token', refresh_token: 'e2e-refresh' },
+  cy.fixture('refresh-token.json').then((body) => {
+    cy.intercept('POST', '**/auth/refresh-token', body)
+  })
+  cy.fixture('required-data.json').then((body) => {
+    cy.intercept('GET', '**/user/required-data', body)
+  })
+  cy.fixture('user.json').then((body) => {
+    cy.intercept('GET', '**/user', body)
+  })
+  // `safeSetUser()` (authProvider.js) also fetches this once logged in —
+  // `stubLogin()` sets its own alias for specs that call that, but this
+  // covers a session reached any other way (e.g. an auto-login straight off
+  // a successful `registration/v4`, no `stubLogin()` in sight).
+  cy.fixture('intercom-token.json').then((body) => {
+    cy.intercept('POST', '**/intercom/token', body)
+  })
+  cy.fixture('deposit-info.json').then((body) => {
+    cy.intercept('GET', '**/user-activity-fact/deposit-info', body)
+  })
+  // `KambiSessionProvider` bootstraps as soon as a sportsbook page mounts for
+  // a logged-in user — same "don't assume stubLogin() ran" reasoning.
+  cy.fixture('sportsbook-token.json').then((body) => {
+    cy.intercept('GET', '**/sportsbook/token', body)
   })
 })
 
@@ -592,7 +641,13 @@ Cypress.Commands.add(
 /** A well-known algorithmically-valid CPF (also used in packages/utils/src/cpf.spec.ts). */
 Cypress.Commands.add(
   'fillCpfStep',
-  (cpf = '52998224725', { acceptAll = true }: { acceptAll?: boolean } = {}) => {
+  (
+    cpf = '52998224725',
+    {
+      acceptAll = true,
+      couponCode,
+    }: { acceptAll?: boolean; couponCode?: string } = {},
+  ) => {
     // Waits for the masked/controlled input to actually reflect what was
     // typed before moving on — `type()` fires the keystrokes but doesn't
     // wait for React to settle, so a slow re-render can otherwise leave the
@@ -600,6 +655,14 @@ Cypress.Commands.add(
     cy.get('input[inputmode="numeric"]')
       .type(cpf)
       .should('not.have.value', '')
+    if (couponCode) {
+      // The field starts collapsed (`cpf-step.tsx`'s `couponExpanded` state)
+      // — has to be opened before it's typeable.
+      cy.get('.cpf-coupon-toggle').click()
+      cy.get('[data-testid="cpf-coupon-input"] input')
+        .type(couponCode)
+        .should('have.value', couponCode)
+    }
     if (acceptAll) {
       cy.get('input[type="checkbox"]').first().check({ force: true }).should('be.checked')
     }
@@ -759,7 +822,7 @@ declare global {
       ): Chainable<JQuery<HTMLElement>>
       fillCpfStep(
         cpf?: string,
-        options?: { acceptAll?: boolean },
+        options?: { acceptAll?: boolean; couponCode?: string },
       ): Chainable<JQuery<HTMLElement>>
       fillPasswordStep(password?: string): Chainable<JQuery<HTMLElement>>
       selectEmailVerificationMethod(): Chainable<JQuery<HTMLElement>>

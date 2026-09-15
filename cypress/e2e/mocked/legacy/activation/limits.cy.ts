@@ -1,6 +1,14 @@
 describe('Legacy RG limits screen (pre-KIB-8557 RGLimits)', () => {
   const openLegacyRgScreen = () => {
     cy.loginBeforeVisit('/', { user_status: { name: 'PENDING' } })
+    // This suite specifically exercises "the user has no limits set yet" —
+    // `stubActiveSession()`/`stubLogin()` now default `GET **/limit` to a
+    // populated, already-fully-configured user (`limit.json`), which would
+    // otherwise make the app correctly decide this step is already done and
+    // skip the screen entirely. Registered after both, so it wins.
+    cy.fixture('limit-empty.json').then((body) => {
+      cy.intercept('GET', '**/limit', body)
+    })
     cy.dismissCookieBannerIfVisible()
     cy.contains('Escolha como definir seus limites', { timeout: 15000 }).should(
       'be.visible',

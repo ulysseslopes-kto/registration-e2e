@@ -1,0 +1,17 @@
+{
+  "message": null,
+  "messageCode": null,
+  "data": [
+    {
+      "id": 9414,
+      "type": "REALITY_CHECK",
+      "status": "ACTIVE",
+      "period": null,
+      "absolute_amount": 10800,
+      "consumed_amount": 0,
+      "consumed_percentage": 0.00,
+      "scheduled_change": null,
+      "limit_reached": null
+    }
+  ]
+}

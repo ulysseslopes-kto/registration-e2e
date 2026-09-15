@@ -1,0 +1,9 @@
+{
+  "data": {
+    "acceptTc": true,
+    "acceptPp": true,
+    "emailVerified": true,
+    "mobileVerified": true,
+    "mustResetPasswordAndLiveness": false
+  }
+}
