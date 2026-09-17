@@ -42,7 +42,6 @@ describe('Login (auth-landing) — real backend', () => {
     cy.overrideGrowthbookFeature('fe_igp_registration_new_ui_experience', {
       defaultValue: true,
     })
-    cy.acceptCookieBanner()
     cy.visit('/login/')
     cy.dismissCookieBannerIfVisible()
 

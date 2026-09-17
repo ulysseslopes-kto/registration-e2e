@@ -28,7 +28,6 @@ describe('Legacy login — self-exclusion condition', () => {
       // UTC → America/Sao_Paulo (UTC-3, no DST in Brazil) = 20:59.
       selfExclusionEndDate: '2026-12-31T23:59:00Z',
     })
-    cy.acceptCookieBanner()
     cy.visit('/login/')
     cy.dismissCookieBannerIfVisible()
 

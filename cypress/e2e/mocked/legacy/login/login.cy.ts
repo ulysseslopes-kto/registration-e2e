@@ -26,7 +26,6 @@ describe('Legacy login', () => {
 
   it('renders the legacy form (not the new auth-landing) when the flag is off', () => {
     cy.stubGrowthbookFeatures(LEGACY_FLOW)
-    cy.acceptCookieBanner()
     cy.visit('/login/')
     cy.dismissCookieBannerIfVisible()
 
@@ -40,7 +39,6 @@ describe('Legacy login', () => {
   it('valid credentials log in and redirect away from /login', () => {
     cy.stubGrowthbookFeatures(LEGACY_FLOW)
     cy.stubLogin()
-    cy.acceptCookieBanner()
     cy.visit('/login/')
     cy.dismissCookieBannerIfVisible()
 
@@ -59,7 +57,6 @@ describe('Legacy login', () => {
     // to the raw `error.message`, which is empty for a hand-rolled stub body
     // and renders a blank, zero-height `#errorMessage`.
     cy.stubLogin({ statusCode: 401, body: { messageCode: 174 } })
-    cy.acceptCookieBanner()
     cy.visit('/login/')
     cy.dismissCookieBannerIfVisible()
 
@@ -74,7 +71,6 @@ describe('Legacy login', () => {
 
   it('"Registre-se agora" (#joinNow) navigates to the registration page', () => {
     cy.stubGrowthbookFeatures(LEGACY_FLOW)
-    cy.acceptCookieBanner()
     cy.visit('/login/')
     cy.dismissCookieBannerIfVisible()
 

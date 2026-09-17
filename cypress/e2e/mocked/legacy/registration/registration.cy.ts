@@ -105,7 +105,6 @@ describe('Legacy registration', () => {
   describe('CPF/e-mail/password step', () => {
     beforeEach(() => {
       cy.stubGrowthbookFeatures(LEGACY_FLOW)
-      cy.acceptCookieBanner()
       cy.visit('/registro/')
       cy.dismissCookieBannerIfVisible()
       cy.get('#register-form', { timeout: 10000 }).should('exist')
@@ -156,7 +155,6 @@ describe('Legacy registration', () => {
       cy.stubLegacyCpfCheck()
       cy.stubEmailCheck()
       cy.stubSendToken()
-      cy.acceptCookieBanner()
       cy.visit('/registro/')
       cy.dismissCookieBannerIfVisible()
       cy.get('#register-form', { timeout: 10000 }).should('exist')
@@ -188,7 +186,6 @@ describe('Legacy registration', () => {
       cy.stubSendToken()
       cy.stubValidateToken()
       cy.stubLegacySmsSend()
-      cy.acceptCookieBanner()
       cy.visit('/registro/')
       cy.dismissCookieBannerIfVisible()
       cy.get('#register-form', { timeout: 10000 }).should('exist')
@@ -221,7 +218,6 @@ describe('Legacy registration', () => {
       cy.stubValidateToken()
       cy.stubLegacySmsSend()
       cy.stubLegacySmsValidate()
-      cy.acceptCookieBanner()
       cy.visit('/registro/')
       cy.dismissCookieBannerIfVisible()
       cy.get('#register-form', { timeout: 10000 }).should('exist')

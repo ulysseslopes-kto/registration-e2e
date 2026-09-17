@@ -38,7 +38,6 @@
  */
 describe('Registration 2026 — refer a friend', () => {
   const visitRegistration = (query = '') => {
-    cy.acceptCookieBanner()
     cy.visit(`/registro/${query}`)
     cy.dismissCookieBannerIfVisible()
   }

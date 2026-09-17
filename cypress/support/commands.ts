@@ -91,6 +91,20 @@ Cypress.Commands.add('acceptCookieBanner', () => {
 })
 
 /**
+ * Same idea as `acceptCookieBanner()` above, but with the cookie AdOpt
+ * writes after a human clicks "Rejeitar" (`#adopt-reject-all-button`)
+ * instead of "Aceitar" — captured the same way, once, in
+ * fixtures/adopt-consent-denied.json. Suppresses the banner just the same
+ * (AdOpt still sees the choice as already-answered), only the answer
+ * itself differs. Call before `cy.visit()`.
+ */
+Cypress.Commands.add('denyCookieBanner', () => {
+  cy.fixture('adopt-consent-denied.json').then((consent) => {
+    cy.setCookie('AdoptConsent', consent.AdoptConsent, { secure: true })
+  })
+})
+
+/**
  * Real-click fallback for when the AdOpt banner renders anyway despite the
  * `AdoptConsent` cookie `acceptCookieBanner()` sets — seen intermittently
  * (AdOpt revalidates consent against its own backend, and can apparently
@@ -136,16 +150,16 @@ Cypress.Commands.add(
 )
 
 /**
- * Suppress the cookie banner → visit `/registro/` directly. Goes straight to
- * the registration screen instead of the home page → register-CTA click, so
- * tests don't depend on the home page's marketing banners (whose Gatsby
- * `<Link>`s prefetch-`HEAD` their target pages when scrolled into view).
- * Also runs `dismissCookieBannerIfVisible()` right after the visit, so tests
- * start with the banner already out of the way even on the occasions AdOpt
- * renders it despite the cookie.
+ * Visit `/registro/` directly. Goes straight to the registration screen
+ * instead of the home page → register-CTA click, so tests don't depend on
+ * the home page's marketing banners (whose Gatsby `<Link>`s prefetch-`HEAD`
+ * their target pages when scrolled into view). Runs
+ * `dismissCookieBannerIfVisible()` right after the visit, so tests start
+ * with the banner already out of the way even on the occasions AdOpt
+ * renders it despite the (denied, per the global default —
+ * `denyCookieBanner()` in `e2e.ts`) `AdoptConsent` cookie.
  */
 Cypress.Commands.add('startRegistration', () => {
-  cy.acceptCookieBanner()
   cy.visit('/registro/')
   cy.dismissCookieBannerIfVisible()
 })
@@ -336,6 +350,85 @@ Cypress.Commands.add(
       statusCode,
       body: messageCode ? { messageCode } : { data: {} },
     }).as('validateToken')
+  },
+)
+
+/**
+ * Login's own 2FA (`messageCode 455` on `/auth/login` — see
+ * cypress/e2e/mocked/{legacy,new}/login/2fa-7-days.cy.ts), email channel.
+ * Same `/account-verification/email/...` endpoints in both the legacy
+ * (`Login2faContent/EmailVerification`) and new (`login-2fa.hook.tsx`)
+ * components — distinct from `stubSendToken`/`stubValidateToken` above,
+ * which are the *registration* flow's own `/registration/email/...` pair.
+ */
+Cypress.Commands.add(
+  'stubTwoFaSendEmail',
+  (overrides: { statusCode?: number; messageCode?: number } = {}) => {
+    const { statusCode = 200, messageCode } = overrides
+    cy.intercept('POST', '**/account-verification/email/send-email', {
+      statusCode,
+      body: messageCode ? { messageCode } : { data: {} },
+    }).as('sendTwoFaEmail')
+  },
+)
+
+Cypress.Commands.add(
+  'stubTwoFaValidateEmail',
+  (overrides: { statusCode?: number; messageCode?: number } = {}) => {
+    const { statusCode = 200, messageCode } = overrides
+    cy.intercept('POST', '**/account-verification/email/validate-token', {
+      statusCode,
+      body: messageCode ? { messageCode } : { data: {} },
+    }).as('validateTwoFaEmail')
+  },
+)
+
+/**
+ * Login's own 2FA, SMS channel — same endpoints in both flows (see
+ * `stubTwoFaSendEmail` above). `messageCode: 604`/`1214`
+ * (`SMS_PROVIDER_TOO_MANY_REQUESTS_CODE`/`ACCOUNT_VERIFICATION_TOO_MANY_ATTEMPTS_CODE`,
+ * checked by both flows' own `isTooManyAttempts`) is the one failure mode
+ * that ends the 2FA attempt entirely (`onFail`) rather than just showing an
+ * invalid-code error — any other `messageCode` here exercises that
+ * ordinary wrong-code path instead.
+ */
+Cypress.Commands.add(
+  'stubTwoFaSendSms',
+  (
+    overrides: {
+      statusCode?: number
+      messageCode?: number
+      mobileNumber?: string
+    } = {},
+  ) => {
+    const {
+      statusCode = 200,
+      messageCode,
+      mobileNumber = '11987654321',
+    } = overrides
+    cy.intercept(
+      'POST',
+      '**/account-verification/mobile-number/send-verification-sms',
+      {
+        statusCode,
+        body: messageCode ? { messageCode } : { data: { mobileNumber } },
+      },
+    ).as('sendTwoFaSms')
+  },
+)
+
+Cypress.Commands.add(
+  'stubTwoFaValidateSms',
+  (overrides: { statusCode?: number; messageCode?: number } = {}) => {
+    const { statusCode = 200, messageCode } = overrides
+    cy.intercept(
+      'POST',
+      '**/account-verification/mobile-number/check-verification-sms-code',
+      {
+        statusCode,
+        body: messageCode ? { messageCode } : { data: {} },
+      },
+    ).as('validateTwoFaSms')
   },
 )
 
@@ -735,6 +828,8 @@ declare global {
       /** See implementation doc above. */
       acceptCookieBanner(): Chainable<JQuery<HTMLElement>>
       /** See implementation doc above. */
+      denyCookieBanner(): Chainable<JQuery<HTMLElement>>
+      /** See implementation doc above. */
       dismissCookieBannerIfVisible(options?: {
         wait?: boolean
       }): Chainable<JQuery<HTMLBodyElement>>
@@ -785,6 +880,27 @@ declare global {
         messageCode?: number
       }): Chainable<null>
       stubValidateToken(overrides?: {
+        statusCode?: number
+        messageCode?: number
+      }): Chainable<null>
+      /** See implementation doc above. Shared by both login flows. */
+      stubTwoFaSendEmail(overrides?: {
+        statusCode?: number
+        messageCode?: number
+      }): Chainable<null>
+      /** See implementation doc above. Shared by both login flows. */
+      stubTwoFaValidateEmail(overrides?: {
+        statusCode?: number
+        messageCode?: number
+      }): Chainable<null>
+      /** See implementation doc above. Shared by both login flows. */
+      stubTwoFaSendSms(overrides?: {
+        statusCode?: number
+        messageCode?: number
+        mobileNumber?: string
+      }): Chainable<null>
+      /** See implementation doc above. Shared by both login flows. */
+      stubTwoFaValidateSms(overrides?: {
         statusCode?: number
         messageCode?: number
       }): Chainable<null>
