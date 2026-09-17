@@ -41,7 +41,6 @@ describe('Legacy RG limits screen (pre-KIB-8557 RGLimits)', () => {
     cy.stubLimitPeriods()
     cy.stubSetLimit()
     cy.stubActiveSession()
-    cy.acceptCookieBanner()
   })
 
   it('renders the choice stage with both methods, and "Usar os limites máximos" submits immediately with the exact max-limit payloads (no confirm click, no "source" field)', () => {

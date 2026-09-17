@@ -79,7 +79,6 @@ describe('Legacy registration — full flow (integrated backend)', () => {
     // The two deliberate intercepts in this spec — see the file header.
     cy.stubValidateToken()
     cy.stubLegacySmsValidate()
-    cy.acceptCookieBanner()
     cy.visit('/registro/')
     cy.dismissCookieBannerIfVisible()
     cy.get('#register-form', { timeout: 10000 }).should('exist')

@@ -44,7 +44,6 @@ describe('Registration 2026 — RG limits screen (KIB-8557)', () => {
     cy.stubLimitPeriods()
     cy.stubSetLimit()
     cy.stubActiveSession()
-    cy.acceptCookieBanner()
   })
 
   it('renders the choice stage with the max/manual/dismiss options, and "Usar limites máximos" sends the exact max-limit payloads for both limit types', () => {

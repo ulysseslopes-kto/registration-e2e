@@ -59,10 +59,13 @@ Cypress.on('uncaught:exception', (err) => {
 beforeEach(() => {
   // Set the AdOpt "already-answered" cookie globally so the consent banner
   // never renders, regardless of which spec/command visits a page — see
-  // `acceptCookieBanner()` in commands.ts. Must run before `cy.visit()`.
+  // `denyCookieBanner()` in commands.ts. Must run before `cy.visit()`.
   // Unlike everything else in this hook, this isn't a network stub — AdOpt's
-  // own real script reads it — so it applies in both modes.
-  cy.acceptCookieBanner()
+  // own real script reads it — so it applies in both modes. Denied, not
+  // accepted, is the suite-wide default here — a spec that specifically
+  // needs the accepted state calls `cy.acceptCookieBanner()` itself to
+  // override it.
+  cy.denyCookieBanner()
 
   // CY_MODE=integrated is meant to hit real backend and third-party services
   // (see cypress.config.ts) — none of the intercepts below apply there, only

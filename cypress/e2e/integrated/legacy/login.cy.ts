@@ -45,7 +45,6 @@ describe('Legacy login — real backend', () => {
     cy.overrideGrowthbookFeature('fe_igp_registration_new_ui_experience', {
       defaultValue: false,
     })
-    cy.acceptCookieBanner()
     cy.visit('/login/')
     cy.dismissCookieBannerIfVisible()
 

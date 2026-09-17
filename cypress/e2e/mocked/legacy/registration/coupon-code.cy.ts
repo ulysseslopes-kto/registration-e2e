@@ -86,7 +86,6 @@ describe('Legacy registration — coupon code', () => {
   describe('field visibility', () => {
     beforeEach(() => {
       cy.stubGrowthbookFeatures(FLOW_WITH_COUPON_CODE)
-      cy.acceptCookieBanner()
     })
 
     it('renders the coupon field when there is no referral code', () => {
@@ -117,7 +116,6 @@ describe('Legacy registration — coupon code', () => {
       cy.stubLegacySmsValidate()
       cy.stubRegister()
       cy.stubLogin() // loginUser() downstream calls, after a successful registration/v4
-      cy.acceptCookieBanner()
       cy.visit('/registro/')
       cy.dismissCookieBannerIfVisible()
       cy.get('#register-form', { timeout: 10000 }).should('exist')
@@ -154,7 +152,6 @@ describe('Legacy registration — coupon code', () => {
   describe('coupon format validation (validateCoupon, helpers/validators.js)', () => {
     beforeEach(() => {
       cy.stubGrowthbookFeatures(FLOW_WITH_COUPON_CODE)
-      cy.acceptCookieBanner()
       cy.visit('/registro/')
       cy.dismissCookieBannerIfVisible()
       cy.get('#register-form', { timeout: 10000 }).should('exist')

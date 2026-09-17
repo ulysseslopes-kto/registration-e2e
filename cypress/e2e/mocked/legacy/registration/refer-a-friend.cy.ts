@@ -116,7 +116,6 @@ describe('Legacy registration — refer a friend', () => {
       cy.stubRegister()
       cy.stubLogin() // loginUser() downstream calls, after a successful registration/v4
       cy.stubActiveSession()
-      cy.acceptCookieBanner()
     })
 
     it('a ?referrerCode on the register URL is sent as registration/v4\'s referralToken', () => {
@@ -170,7 +169,6 @@ describe('Legacy registration — refer a friend', () => {
   describe('register-lobby welcome banner', () => {
     beforeEach(() => {
       cy.stubGrowthbookFeatures(LEGACY_FLOW)
-      cy.acceptCookieBanner()
     })
 
     it('shows the referral welcome message when a referral code is present', () => {
