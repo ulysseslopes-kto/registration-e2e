@@ -432,6 +432,230 @@ Cypress.Commands.add(
   },
 )
 
+/**
+ * Legacy forgot-password flow (`ResetPasswordEmailFlow`,
+ * apps/core/src/atomic-components/organisms/ResetPasswordFlows/emailFlow.js)
+ * — step 1, `doSendResetPasswordEmailCode`. Not gated by any GrowthBook flag
+ * (shared verbatim by both the legacy and new login's "Esqueceu a senha?"
+ * link — both land on the same `/forgot-password/` component tree). `70`
+ * (`login.error.wrongEmail`) and `420` (recaptcha) render inline
+ * `#errorMessage`; `729` too — but that key
+ * (`forgotPassword.email.channelNotAvailable`) is missing from
+ * `lang.flat.json`, so it renders the raw fallback
+ * `forgotPassword/email/channelNotAvailable` (real prod behavior, not a
+ * test-env quirk — see `formatKey.ts`).
+ */
+Cypress.Commands.add(
+  'stubForgotPasswordSendEmailCode',
+  (overrides: { statusCode?: number; messageCode?: number } = {}) => {
+    const { statusCode = 200, messageCode } = overrides
+    cy.intercept('POST', '**/player/password/forgot/email/send-email', {
+      statusCode,
+      body: messageCode ? { messageCode } : { data: {} },
+    }).as('forgotPasswordSendEmailCode')
+  },
+)
+
+/**
+ * Same flow, step 2 — `doValidateResetPasswordEmailCode`. On success the
+ * `token`/`userId` pair is fed straight into `doRequestResetPasswordLiveness`
+ * (`handleFlowSuccess`, forgot-password.js), so a stub here needs both
+ * fields for the flow to proceed. `604` (too many requests) maps to
+ * `twoFa.email.tooManyRequests`, itself ALSO missing from
+ * `lang.flat.json` — same raw-fallback caveat as the send-email step above.
+ * Any other `messageCode` falls through to the generic
+ * `twoFa.email.error` toast ("Código inválido...").
+ */
+Cypress.Commands.add(
+  'stubForgotPasswordValidateEmailCode',
+  (
+    overrides: {
+      statusCode?: number
+      messageCode?: number
+      token?: string
+      userId?: string
+    } = {},
+  ) => {
+    const {
+      statusCode = 200,
+      messageCode,
+      token = 'e2e-reset-token',
+      userId = 'e2e-reset-user-id',
+    } = overrides
+    cy.intercept('POST', '**/player/password/forgot/email/validate-token', {
+      statusCode,
+      body: messageCode ? { messageCode } : { data: { token, userId } },
+    }).as('forgotPasswordValidateEmailCode')
+  },
+)
+
+/**
+ * Same flow, SMS channel step 1 — `doSendResetPasswordSMSCode`
+ * (`ResetPasswordSMSFlow`, `.../ResetPasswordFlows/smsFlow.js`). Only `729`
+ * (channel not available, same missing-translation caveat as the email
+ * variant) is handled explicitly by the component; anything else falls back
+ * to the flow's own generic error.
+ */
+Cypress.Commands.add(
+  'stubForgotPasswordSendSmsCode',
+  (overrides: { statusCode?: number; messageCode?: number } = {}) => {
+    const { statusCode = 200, messageCode } = overrides
+    cy.intercept(
+      'POST',
+      '**/player/password/forgot/mobile-number/send-verification-sms',
+      {
+        statusCode,
+        body: messageCode ? { messageCode } : { data: {} },
+      },
+    ).as('forgotPasswordSendSmsCode')
+  },
+)
+
+/**
+ * Same flow, SMS channel step 2 — `doValidateResetPasswordSMSCode`. Unlike
+ * the email variant, `twoFa.sms.tooManyRequests` (messageCode `604`) IS
+ * present in `lang.flat.json` ("Muitas tentativas...") — real translated
+ * text renders here, no fallback-key caveat.
+ */
+Cypress.Commands.add(
+  'stubForgotPasswordValidateSmsCode',
+  (
+    overrides: {
+      statusCode?: number
+      messageCode?: number
+      token?: string
+      userId?: string
+    } = {},
+  ) => {
+    const {
+      statusCode = 200,
+      messageCode,
+      token = 'e2e-reset-token',
+      userId = 'e2e-reset-user-id',
+    } = overrides
+    cy.intercept(
+      'POST',
+      '**/player/password/forgot/mobile-number/check-verification-sms-code',
+      {
+        statusCode,
+        body: messageCode ? { messageCode } : { data: { token, userId } },
+      },
+    ).as('forgotPasswordValidateSmsCode')
+  },
+)
+
+/**
+ * Forgot-password's mandatory liveness kickoff —
+ * `doRequestResetPasswordLiveness`, `POST /player/password/forgot/onboarding`
+ * — fired unconditionally the instant either OTP step succeeds
+ * (`handleFlowSuccess`, forgot-password.js). There is no flag/branch to skip
+ * straight to the password-reset form after this; a successful response
+ * just transitions into `KycSteps`'s own start screen
+ * (`data-qa="kyc-button-start"`, no further network call), which is as far
+ * as this repo's mocked specs take this particular entry point — see the
+ * forgot-password spec's header comment for why.
+ */
+Cypress.Commands.add(
+  'stubForgotPasswordLiveness',
+  (overrides: { statusCode?: number; type?: string } = {}) => {
+    const { statusCode = 200, type = 'LIVENESS' } = overrides
+    cy.intercept('POST', '**/player/password/forgot/onboarding', {
+      statusCode,
+      body: {
+        data: {
+          type,
+          url: 'https://kyc.e2e.test/session',
+          onboardingId: 'e2e-onboarding-id',
+          provider: 'e2e-provider',
+          token: 'e2e-kyc-token',
+        },
+      },
+    }).as('forgotPasswordLiveness')
+  },
+)
+
+/**
+ * The token-link reset page (`ResetPasswordContent` local to
+ * apps/core/src/templates/onBoarding/reset.js, mounted at `/reset/`) —
+ * `doResetPassword`, `POST /auth/password/reset/`. This is a *different*
+ * function from the `/forgot-password/` flow's own final step
+ * (`doResetPasswordV2`, `POST /player/password/forgot`) — same-looking
+ * component names, unrelated code paths. `hasNoData: true` on this adapter
+ * call, so a success response needs no `{ data: ... }` envelope at all,
+ * unlike every other endpoint in this flow. With the base GrowthBook
+ * fixture (`forgot_password_with_liveness` absent → falsy), this page skips
+ * its own optional liveness step entirely and renders the password form
+ * immediately — the only route in this whole flow where a password change
+ * can be driven to completion purely with `cy.intercept`.
+ */
+Cypress.Commands.add(
+  'stubResetPassword',
+  (overrides: { statusCode?: number; messageCode?: number } = {}) => {
+    const { statusCode = 200, messageCode } = overrides
+    cy.intercept('POST', '**/auth/password/reset/', {
+      statusCode,
+      body: messageCode ? { messageCode } : {},
+    }).as('resetPassword')
+  },
+)
+
+/**
+ * The "new" (Registration 2026) forgot-password flow's KYC status check —
+ * `getKycLivenessStatusByProvider` (packages/core-api/src/adapters/kyc.ts),
+ * `GET /liveness/{provider}/{onboardingId}` — polled by `useKycStatus`
+ * (packages/kyc/src/hooks/use-kyc-status.hook.ts) the instant
+ * `forgot-password-identity.hook.tsx`'s `isCapturing` flips true (clicking
+ * "Começar verificação"), no third-party widget or `postMessage` needed:
+ * the *first* poll is awaited before any interval is ever set up, so a
+ * `status: 'APPROVED'` response here resolves the whole identity step
+ * synchronously. This is what lets the new flow's mocked spec drive a real
+ * password change to completion, unlike the legacy flow's `KycSteps` (see
+ * `forgot-password.cy.ts`'s header comment). Only fires for `kycType ===
+ * LIVENESS` (i.e. the liveness `type` stubbed via `stubForgotPasswordLiveness`
+ * is anything other than `'IDENTIFICATION_AND_SELFIE'`) — the onboarding
+ * variant (`GET /documents/{provider}/{onboardingId}`) isn't covered here.
+ * A `REJECTED`/`REPROVED` status with no `id` field skips the extra
+ * `GET /documents/{id}/reject-reasons` call (`fetchRejectReason` only fires
+ * `if (data?.id)`) — omit `id` unless a test specifically needs that call.
+ */
+Cypress.Commands.add(
+  'stubKycLivenessStatus',
+  (
+    overrides: {
+      status?: 'APPROVED' | 'REJECTED' | 'REPROVED'
+      id?: number
+      statusCode?: number
+    } = {},
+  ) => {
+    const { status = 'APPROVED', id, statusCode = 200 } = overrides
+    cy.intercept('GET', '**/liveness/**', {
+      statusCode,
+      body: { data: { status, ...(id !== undefined ? { id } : {}) } },
+    }).as('kycLivenessStatus')
+  },
+)
+
+/**
+ * The new flow's final step — `doResetPasswordV2`, `POST
+ * /player/password/forgot` (`forgot-password.hook.tsx`'s `submitPassword`).
+ * Same endpoint the legacy `/forgot-password/` flow's own final step would
+ * call, just never reachable in that flow's mocked spec (mandatory KYC with
+ * no bypass — see `forgot-password.cy.ts`). Default `{ hasNestedData: true }`
+ * envelope on `apiPOST` (no override passed), so success needs `{ data: ... }`
+ * — the *opposite* of `stubResetPassword` above (`/auth/password/reset/`,
+ * `hasNoData: true`, no body needed at all).
+ */
+Cypress.Commands.add(
+  'stubForgotPasswordResetV2',
+  (overrides: { statusCode?: number; messageCode?: number } = {}) => {
+    const { statusCode = 200, messageCode } = overrides
+    cy.intercept('POST', '**/player/password/forgot', {
+      statusCode,
+      body: messageCode ? { messageCode } : { data: {} },
+    }).as('forgotPasswordResetV2')
+  },
+)
+
 Cypress.Commands.add(
   'stubSocialSignIn',
   (overrides: { statusCode?: number; body?: Record<string, unknown> } = {}) => {
@@ -901,6 +1125,51 @@ declare global {
       }): Chainable<null>
       /** See implementation doc above. Shared by both login flows. */
       stubTwoFaValidateSms(overrides?: {
+        statusCode?: number
+        messageCode?: number
+      }): Chainable<null>
+      /** See implementation doc above. Legacy `/forgot-password/` flow only. */
+      stubForgotPasswordSendEmailCode(overrides?: {
+        statusCode?: number
+        messageCode?: number
+      }): Chainable<null>
+      /** See implementation doc above. Legacy `/forgot-password/` flow only. */
+      stubForgotPasswordValidateEmailCode(overrides?: {
+        statusCode?: number
+        messageCode?: number
+        token?: string
+        userId?: string
+      }): Chainable<null>
+      /** See implementation doc above. Legacy `/forgot-password/` flow only. */
+      stubForgotPasswordSendSmsCode(overrides?: {
+        statusCode?: number
+        messageCode?: number
+      }): Chainable<null>
+      /** See implementation doc above. Legacy `/forgot-password/` flow only. */
+      stubForgotPasswordValidateSmsCode(overrides?: {
+        statusCode?: number
+        messageCode?: number
+        token?: string
+        userId?: string
+      }): Chainable<null>
+      /** See implementation doc above. Legacy `/forgot-password/` flow only. */
+      stubForgotPasswordLiveness(overrides?: {
+        statusCode?: number
+        type?: string
+      }): Chainable<null>
+      /** See implementation doc above. Legacy `/reset/` token-link page only. */
+      stubResetPassword(overrides?: {
+        statusCode?: number
+        messageCode?: number
+      }): Chainable<null>
+      /** See implementation doc above. New (Registration 2026) forgot-password flow only. */
+      stubKycLivenessStatus(overrides?: {
+        status?: 'APPROVED' | 'REJECTED' | 'REPROVED'
+        id?: number
+        statusCode?: number
+      }): Chainable<null>
+      /** See implementation doc above. New (Registration 2026) forgot-password flow only. */
+      stubForgotPasswordResetV2(overrides?: {
         statusCode?: number
         messageCode?: number
       }): Chainable<null>
