@@ -1,6 +1,6 @@
 /**
  * "Registration 2026"'s refer-a-friend handling (KIB-9238) — not in the
- * original test matrix (KIB-8932), same as `mixpanel-tracking.cy.ts` and
+ * original test matrix (KIB-8932), same as `analytics-events.cy.ts` and
  * `login/{self-excluded,migratable}.cy.ts`.
  *
  * A materially different mechanism from the legacy flow covered in

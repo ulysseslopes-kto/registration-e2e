@@ -21,9 +21,9 @@ describe('Account create — full flow (mocked backend)', () => {
     cy.stubRegister()
     // Mixpanel tracking is currently off (fe_igp_event_tracking_enabled isn't
     // in the base fixture), so this is a no-op today — but it's the same real
-    // project token used in every environment (see mixpanel-tracking.cy.ts),
-    // so this stays here as a guardrail against ever hitting it for real if
-    // that default changes.
+    // project token used in every environment (see `recordTrackedEvents` in
+    // commands.ts), so this stays here as a guardrail against ever hitting it
+    // for real if that default changes.
     cy.intercept('POST', '**/track/**', { statusCode: 200 }).as('mixpanelTrack')
   })
 

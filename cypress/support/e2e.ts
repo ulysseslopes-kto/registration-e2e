@@ -16,11 +16,9 @@ import {
 // that point, by making the call a no-op at the source.
 //
 // This has to stay a hostname allowlist-of-one-way, not a blanket no-op:
-// `mixpanel-tracking.cy.ts` depends on mixpanel-browser's own real
-// `sendBeacon` flush actually firing (see that file's header comment) so its
-// own `cy.intercept('**/track/**')` can capture it — only the noisy
-// third-party hosts below are silenced; every other destination still goes
-// through natively.
+// `recordTrackedEvents` (commands.ts) wraps each page's `sendBeacon` to
+// capture Mixpanel's batches — only the noisy third-party hosts below are
+// silenced; every other destination still goes through natively.
 const SEND_BEACON_BLOCKED_HOSTS = [
   'google-analytics.com',
   'googlesyndication.com',
