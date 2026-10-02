@@ -1038,6 +1038,220 @@ Cypress.Commands.add('fillOtp', (code = '1234') => {
   cy.get('input[data-input-otp="true"]').type(code)
 })
 
+/**
+ * Everything the new-flow activation KYC screen (`useActivationKyc`,
+ * modules/registration/src/features/activation-flow/activation-kyc) calls
+ * through `@repo/kyc`, all `{ data: ... }`-wrapped (`apiGET` default):
+ * - `GET /session/active` + `GET /onboardings` (`useKycUrl`, on mount) —
+ *   `provider: 'CAF'` so the capture step renders a plain `KycIFrame`
+ *   (pointed at `about:blank`) instead of loading Unico's SDK.
+ * - `GET /documents/CAF/<onboardingId>` (`useKycStatus`, polled once the
+ *   user starts verification) answers `status` straight away.
+ * - `GET /documents/<id>/reject-reasons` — only read on REJECTED/REPROVED.
+ *   An empty list is a provider failure; a non-empty one is a document
+ *   issue (`KycFailure`'s `isDocumentError = Boolean(rejectReason)`).
+ */
+Cypress.Commands.add(
+  'stubKycOnboarding',
+  (
+    overrides: {
+      status?: 'APPROVED' | 'REJECTED' | 'REPROVED' | 'PENDING_VALIDATION'
+      rejectReasons?: string[]
+    } = {},
+  ) => {
+    const { status = 'APPROVED', rejectReasons = [] } = overrides
+    cy.intercept('GET', '**/session/active', { data: 'e2e-session' }).as(
+      'kycSession',
+    )
+    cy.intercept('GET', '**/onboardings*', {
+      data: {
+        onboardingId: 'e2e-onboarding',
+        url: 'about:blank',
+        provider: 'CAF',
+        token: 'e2e-kyc-token',
+      },
+    }).as('kycOnboarding')
+    cy.intercept('GET', '**/documents/CAF/e2e-onboarding', {
+      data: { status, id: 4242 },
+    }).as('kycStatus')
+    cy.intercept('GET', '**/documents/4242/reject-reasons', {
+      data: rejectReasons,
+    }).as('kycRejectReasons')
+  },
+)
+
+/**
+ * The new-flow activation address screen's reads and write
+ * (`useUserAddress`, modules/registration/src/features/activation-flow/activation-address):
+ * - `GET /user/address` — `saved` seeds the prefilled "confirm" stage;
+ *   `null` (default) starts on the CEP stage instead.
+ * - `GET /country/31/regions` and `GET /city?country_id=31` — 31 is Brazil's
+ *   id in the global `/country/registration-dropdown` stub (fixtures.ts).
+ * - `PUT /user/update-address-and-mobile-number` — `hasNestedData: false`,
+ *   so its body is read as-is.
+ */
+Cypress.Commands.add(
+  'stubUserAddress',
+  (
+    overrides: {
+      saved?: Record<string, string> | null
+      statusCode?: number
+    } = {},
+  ) => {
+    const { saved = null, statusCode = 200 } = overrides
+    cy.intercept('GET', '**/user/address', { data: saved }).as('userAddress')
+    cy.intercept('GET', '**/country/31/regions', {
+      data: [{ id: 25, name: 'São Paulo' }],
+    }).as('regions')
+    cy.intercept({ method: 'GET', url: /\/city(\?|$)/ }, {
+      data: [{ id: 1, name: 'São Paulo', regionId: 25 }],
+    }).as('cities')
+    cy.intercept('PUT', '**/user/update-address-and-mobile-number', {
+      statusCode,
+      body: {},
+    }).as('updateAddress')
+  },
+)
+
+/**
+ * Intercom's messenger, as opened by the auth shell's support icon
+ * (`useIntercomMessenger().toggleContactUs` → `intercomProvider.js`): it
+ * injects `<script src="https://widget.intercom.io/widget/<app id>">`, then
+ * calls `Intercom('shutdown' | 'boot' | 'onShow' | 'onHide' | 'show')`.
+ * The script is answered with a stand-in that only records those calls on
+ * `window.__intercomCalls` — so `show()` resolves `true` exactly as in
+ * production, but nothing real loads or opens. Everything else under
+ * Intercom's hosts (API, CDN assets) is short-circuited too, in case
+ * anything reaches for it directly.
+ */
+Cypress.Commands.add('stubIntercomWidget', () => {
+  // Catch-alls first: the most recently defined matching intercept wins, so
+  // the widget stub below has to come after them to be the one answering.
+  cy.intercept({ hostname: /(^|\.)intercom\.io$/ }, { statusCode: 200, body: {} })
+  cy.intercept({ hostname: /(^|\.)intercomcdn\.com$/ }, {
+    statusCode: 200,
+    body: '',
+  })
+  cy.intercept('GET', 'https://widget.intercom.io/widget/*', {
+    statusCode: 200,
+    headers: { 'content-type': 'application/javascript' },
+    body:
+      'window.__intercomCalls = window.__intercomCalls || [];' +
+      'window.Intercom = function () {' +
+      '  window.__intercomCalls.push(Array.prototype.slice.call(arguments));' +
+      '};',
+  }).as('intercomWidget')
+})
+
+// --- Mixpanel event tracking (packages/tracking/src/event-tracking-provider.tsx) ---
+// `mixpanel.init(..., { api_transport: 'sendBeacon' })` sends every batch
+// through `navigator.sendBeacon`, which `cy.intercept()` never sees (see the
+// sendBeacon note in e2e.ts). So capture happens at the source instead: each
+// page's `sendBeacon` is wrapped, Mixpanel's `/track` payloads are decoded
+// in-page into `window.__trackedEvents`, and the beacon is swallowed — so no
+// test event ever reaches the real Mixpanel project either (its token is
+// real in every environment). mixpanel-browser reads `navigator.sendBeacon`
+// lazily on every send precisely so it can be patched like this
+// (mixpanel.cjs.js, "late reference to navigator.sendBeacon").
+//
+// Wire format (mixpanel-browser 2.78, `_send_request`): the body is the
+// string `data=<encodeURIComponent(json)>`, where `json` is one event object
+// or, for batched flushes, an array of them. JSON, not base64, because
+// `api_payload_format` defaults to JSON for `*.mixpanel.com` hosts — the
+// base64 branch below only covers a future config change.
+
+interface TrackedEvent {
+  event: string
+  properties: Record<string, unknown>
+}
+
+type TrackingWindow = Cypress.AUTWindow & { __trackedEvents?: TrackedEvent[] }
+
+const decodeMixpanelBeacon = (body: unknown): TrackedEvent[] => {
+  if (typeof body !== 'string') return []
+  const raw = new URLSearchParams(body).get('data')
+  if (!raw) return []
+  const json = /^\s*[[{]/.test(raw) ? raw : atob(raw)
+  const parsed = JSON.parse(json)
+  return Array.isArray(parsed) ? parsed : [parsed]
+}
+
+/**
+ * Starts recording every Mixpanel event the app tracks, for every page this
+ * test visits from here on. Call before `cy.visit()` (directly or via
+ * `startRegistration`/`loginBeforeVisit`). Events live on the page's
+ * `window`, so a full navigation (`cy.visit`) starts a fresh list — assert
+ * on events from the page they were tracked on.
+ *
+ * Tracking itself still needs `fe_igp_event_tracking_enabled` on in the
+ * caller's `stubGrowthbookFeatures()` — it's off in the base fixture.
+ */
+Cypress.Commands.add('recordTrackedEvents', () => {
+  // Mixpanel's non-beacon calls (flags/decide, session-recording config)
+  // go over fetch/XHR, which intercept *does* see — keep those local too.
+  cy.intercept('**mixpanel.com/**', { statusCode: 200, body: '1' })
+  cy.on('window:before:load', (win: TrackingWindow) => {
+    const events: TrackedEvent[] = []
+    win.__trackedEvents = events
+    const sendBeacon = win.navigator.sendBeacon.bind(win.navigator)
+    win.navigator.sendBeacon = (url, data) => {
+      if (!url.toString().includes('mixpanel.com/track')) {
+        return sendBeacon(url, data)
+      }
+      events.push(...decodeMixpanelBeacon(data))
+      return true
+    }
+  })
+})
+
+/**
+ * Waits until EventTrackingProvider's `mixpanel.init()` has run — every
+ * `trackEvent()` before `mixpanelLoaded` flips is a silent no-op, so an
+ * interaction fired too early would drop its event for good.
+ * `persistence: 'localStorage'` makes init write `mp_<token>_mixpanel`,
+ * which is the observable signal used here.
+ */
+Cypress.Commands.add('waitForMixpanel', () => {
+  cy.window({ log: false, timeout: 15000 }).should((win) => {
+    const keys = Object.keys(win.localStorage)
+    expect(
+      keys.some((key) => key.startsWith('mp_') && key.endsWith('_mixpanel')),
+      'mixpanel initialized',
+    ).to.equal(true)
+  })
+})
+
+/**
+ * Waits for `name` to have been tracked exactly once on the current page
+ * (the ticket ACs require exactly once) and yields that event. Batches only
+ * flush every `batch_flush_interval_ms` (5s default), hence the timeout.
+ * Assert on `.its('properties')` with `deep.include` — it compares strictly,
+ * so `10000000` and `'10000000'` don't match, which is what enforces the
+ * ticket's integer types.
+ */
+Cypress.Commands.add(
+  'waitForTrackedEvent',
+  (name: string, { timeout = 15000 }: { timeout?: number } = {}) =>
+    cy
+      .window({ log: false, timeout })
+      .should((win: TrackingWindow) => {
+        const matches = (win.__trackedEvents ?? []).filter(
+          (tracked) => tracked.event === name,
+        )
+        // Listing what *was* tracked makes a rename (e.g. `cpf_saved` vs.
+        // `registration_cpf_saved`) readable straight off the failure.
+        const tracked = (win.__trackedEvents ?? []).map((t) => t.event)
+        expect(
+          matches,
+          `"${name}" tracked exactly once (tracked: ${tracked.join(', ') || 'none'})`,
+        ).to.have.length(1)
+      })
+      .then(
+        (win: TrackingWindow) =>
+          (win.__trackedEvents ?? []).find((tracked) => tracked.event === name)!,
+      ),
+)
+
 declare global {
   namespace Cypress {
     interface Chainable {
@@ -1215,6 +1429,27 @@ declare global {
       fillEmailStep(email?: string): Chainable<JQuery<HTMLElement>>
       fillPhoneStep(mobile?: string): Chainable<JQuery<HTMLElement>>
       fillOtp(code?: string): Chainable<JQuery<HTMLElement>>
+      /** See implementation doc above. */
+      stubKycOnboarding(overrides?: {
+        status?: 'APPROVED' | 'REJECTED' | 'REPROVED' | 'PENDING_VALIDATION'
+        rejectReasons?: string[]
+      }): Chainable<null>
+      /** See implementation doc above. */
+      stubUserAddress(overrides?: {
+        saved?: Record<string, string> | null
+        statusCode?: number
+      }): Chainable<null>
+      /** See implementation doc above. */
+      stubIntercomWidget(): Chainable<null>
+      /** See implementation doc above. */
+      recordTrackedEvents(): Chainable<null>
+      /** See implementation doc above. */
+      waitForMixpanel(): Chainable<Cypress.AUTWindow>
+      /** See implementation doc above. */
+      waitForTrackedEvent(
+        name: string,
+        options?: { timeout?: number },
+      ): Chainable<{ event: string; properties: Record<string, unknown> }>
     }
   }
 }
